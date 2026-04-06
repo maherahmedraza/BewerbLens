@@ -1,0 +1,113 @@
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  z-index: 200;
+  transition: transform 0.3s ease;
+}
+
+.logoContainer {
+  margin-bottom: 40px;
+  padding: 0 12px;
+}
+
+.logo {
+  text-decoration: none;
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  letter-spacing: -0.03em;
+}
+
+.logoIcon {
+  font-size: 24px;
+}
+
+.nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.navLink {
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.navLink:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.active {
+  background-color: var(--accent-blue-soft);
+  color: var(--accent-blue) !important;
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.footer {
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+}
+
+.userSection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 12px;
+}
+
+.avatar {
+  background-color: var(--accent-blue);
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.userInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.userName {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.userRole {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}

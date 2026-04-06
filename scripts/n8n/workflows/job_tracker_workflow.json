@@ -1,0 +1,1821 @@
+{
+  "name": "Job Application Tracker v12.0 (Loop Fixed)",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2000,
+        0
+      ],
+      "id": "manual-trigger"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2000,
+        200
+      ],
+      "id": "gmail-trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "b1EPReC79tl9Ey9y",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════╗\n// ║  MODULE 0: CENTRAL CONFIG                        ║\n// ║  Edit ONLY this node for all settings.           ║\n// ╚══════════════════════════════════════════════════╝\nconst CONFIG = {\n  user_email:       'maherahmedraza1@gmail.com',\n  backfill_after:   '2025/10/01',\n  backfill_before:  '2026/04/05',\n\n  // Valid models:\n  // gemini-3.1-flash-lite-preview  (cheapest, fast)\n  // gemini-3-flash-preview         (better)\n  // gemini-3.1-pro-preview         (best)\n  // gemini-1.5-flash-8b            (stable fallback)\n  gemini_model:      'gemini-3.1-flash-lite-preview',\n  thinking_level:    'minimal',\n  gemini_batch_size: 10,\n  batch_delay_ms:    2000,\n  min_confidence:    0.55,\n\n  telegram_enabled:   false,\n  telegram_bot_token: '',\n  telegram_chat_id:   '',\n\n  blocked_senders_exact: [\n    'notifications-noreply@linkedin.com','jobs-listings@linkedin.com',\n    'jobs-noreply@linkedin.com','jobalerts-noreply@linkedin.com',\n    'inmail-hit-reply@linkedin.com','updates-noreply@linkedin.com',\n    'messages-noreply@linkedin.com','learning-noreply@linkedin.com',\n    'news-noreply@linkedin.com','premium-noreply@linkedin.com',\n    'news@mail.xing.com','info@jobagent.stepstone.de',\n    'jobalert@indeed.com','alert@indeed.com','noreply@indeed.com',\n    'hello@dataquest.io','stefan.huber@hokify.com','noreply@arbeitsagentur.de'\n  ],\n  sender_block_patterns: [\n    'jobalerts-noreply@','jobs-listings@linkedin',\n    'notifications-noreply@linkedin','updates-noreply@linkedin',\n    'messages-noreply@linkedin','learning-noreply@linkedin',\n    'news-noreply@linkedin','premium-noreply@linkedin',\n    'jobagent@stepstone','jobagent@indeed',\n    '@hokify.com','noreply@newsletter.','jobalert@','job-alert@'\n  ],\n  university_patterns: ['uni-koblenz.de','list.uni-','studierende@','@asta.'],\n  subject_always_exclude: [\n    'new jobs for you','neue jobs für dich','jobs matching your search',\n    'jobs you might like','job recommendations','new jobs in your area',\n    'companies are looking for candidates like you',\n    'read this article','read on linkedin','published a newsletter',\n    'published an article','started a new position','is celebrating',\n    'has a new job','people viewed your profile','search appearances',\n    'your posts got','impressions last week','top voices','trending on linkedin',\n    'weekly digest','monthly digest','connection digest','weekly roundup',\n    'career tips','karrieretipps','job alert','job-alert','jobalert',\n    'new jobs matching','jobs matching your','10+ new jobs','5+ new jobs',\n    'jobbenachrichtigung','job benachrichtigung','you have 1 new invitation',\n    'asta sitzung','vorlesung','tutorium','klausur',\n    'spannende jobs für dich','ich denke diese jobs passen','system migration',\n    'one-time-passcode','one-time password','passcode','verification code',\n    'bestätigungscode','ihr zugangscode','dein zugangscode',\n    'complete your application','finish your application','bewerbung abschließen'\n  ]\n};\n\n// Detect whether this was triggered by Gmail or manually\nlet runMode = 'manual_backfill';\nlet emailData = null;\ntry {\n  const t = $('Gmail Trigger').first().json;\n  if (t && t.id) { runMode = 'email_trigger'; emailData = t; }\n} catch(e) {}\n\nconsole.log(`🚀 Run mode: ${runMode}`);\nreturn [{ json: { runMode, emailData, config: CONFIG, triggeredAt: new Date().toISOString() } }];"
+      },
+      "name": "⚙️ CONFIG",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        100
+      ],
+      "id": "config-node"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "name = 'Job Application Tracker' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
+            },
+            {
+              "name": "fields",
+              "value": "files(id,name)"
+            },
+            {
+              "name": "pageSize",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "🔍 Find Sheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1520,
+        100
+      ],
+      "alwaysOutputData": true,
+      "id": "find-sheet",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "8NZtbF8QtSr39HxE",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const drive  = $input.first().json;\nconst cfg    = $('⚙️ CONFIG').first().json;\nconst fileId = drive.files?.[0]?.id || null;\nconsole.log(fileId ? `✅ Sheet found: ${fileId}` : '📋 No sheet - will create');\nreturn [{ json: {\n  sheetExists:    !!fileId,\n  spreadsheetId:  fileId,\n  runMode:        cfg.runMode,\n  emailData:      cfg.emailData,\n  config:         cfg.config,\n  triggeredAt:    cfg.triggeredAt\n} }];"
+      },
+      "name": "📋 Resolve Sheet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1280,
+        100
+      ],
+      "id": "resolve-sheet"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sheetExists }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Sheet Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        100
+      ],
+      "id": "sheet-exists"
+    },
+    {
+      "parameters": {
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "name": "Get Tab IDs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        0
+      ],
+      "id": "get-tab-ids",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $input.first().json;\nconst prev = $('📋 Resolve Sheet').first().json;\nlet appId=null, dashId=null, logId=null;\nfor (const s of (meta.sheets||[])) {\n  const p = s.properties||{};\n  if (p.title==='Applications')       appId  = String(p.sheetId);\n  if (p.title==='Dashboard')          dashId = String(p.sheetId);\n  if (p.title==='Classification Log') logId  = String(p.sheetId);\n}\nconsole.log(`Tabs: App=${appId} Dash=${dashId} Log=${logId}`);\nreturn [{ json: { ...prev, spreadsheetId: prev.spreadsheetId, applicationsSheetId: appId, dashboardSheetId: dashId, logSheetId: logId, isNewSheet: false } }];"
+      },
+      "name": "Extract Existing Tabs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ],
+      "id": "extract-existing-tabs"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"properties\":{\"title\":\"Job Application Tracker\"},\"sheets\":[{\"properties\":{\"title\":\"Applications\",\"gridProperties\":{\"frozenRowCount\":1}}},{\"properties\":{\"title\":\"Dashboard\",\"gridProperties\":{\"frozenRowCount\":1}}},{\"properties\":{\"title\":\"Classification Log\",\"gridProperties\":{\"frozenRowCount\":1}}}]}",
+        "options": {}
+      },
+      "name": "Create Sheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        200
+      ],
+      "id": "create-sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const c    = $input.first().json;\nconst prev = $('📋 Resolve Sheet').first().json;\nconst sh   = c.sheets||[];\nlet appId=null, dashId=null, logId=null;\nfor (const s of sh) {\n  const p=s.properties||{};\n  if (p.title==='Applications')       appId  = String(p.sheetId);\n  if (p.title==='Dashboard')          dashId = String(p.sheetId);\n  if (p.title==='Classification Log') logId  = String(p.sheetId);\n}\nif (!appId  && sh[0]) appId  = String(sh[0].properties.sheetId);\nif (!dashId && sh[1]) dashId = String(sh[1].properties.sheetId);\nif (!logId  && sh[2]) logId  = String(sh[2].properties.sheetId);\nreturn [{ json: { ...prev, spreadsheetId: c.spreadsheetId, applicationsSheetId: appId, dashboardSheetId: dashId, logSheetId: logId, isNewSheet: true } }];"
+      },
+      "name": "Extract New Tabs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        200
+      ],
+      "id": "extract-new-tabs"
+    },
+    {
+      "parameters": {},
+      "name": "Merge Tab Info",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -320,
+        100
+      ],
+      "id": "merge-tab-info"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isNewSheet }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Is New Sheet?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        100
+      ],
+      "id": "is-new-sheet"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build all sheet setup requests for a new spreadsheet\nconst d     = $input.first().json;\nconst appId  = parseInt(d.applicationsSheetId);\nconst dashId = parseInt(d.dashboardSheetId);\nconst logId  = parseInt(d.logSheetId);\n\nreturn [{ json: {\n  ...d,\n  _setupHeaders: [\n    [\"Date Applied\",\"Company Name\",\"Job Title\",\"Platform\",\"Status\",\n     \"Email Subject\",\"Email From\",\"Last Updated\",\"Notes\",\"Thread ID\",\"Processed At\"]\n  ],\n  _logHeaders: [\n    [\"Timestamp\",\"Classification\",\"Company Name\",\"Job Title\",\n     \"Platform\",\"Confidence\",\"Status\",\"Email Subject\",\"From\",\"Reasoning\"]\n  ],\n  _dashValues: [\n    [\"📊 Job Application Dashboard\",\"\",\"\"],\n    [\"Last Updated:\",\"=NOW()\",\"\"],\n    [\"Metric\",\"Count\",\"Rate\"],\n    [\"Total Applications\",\"=COUNTA(Applications!B2:B)\",\"100%\"],\n    [\"Applied\",\"=COUNTIF(Applications!E2:E,\\\"Applied\\\")\",\"=IF(B4>0,TEXT(B5/B4,\\\"0.0%\\\"),\\\"N/A\\\")\"],\n    [\"Rejected\",\"=COUNTIF(Applications!E2:E,\\\"Rejected\\\")\",\"=IF(B4>0,TEXT(B6/B4,\\\"0.0%\\\"),\\\"N/A\\\")\"],\n    [\"Positive Response\",\"=COUNTIF(Applications!E2:E,\\\"Positive Response\\\")\",\"=IF(B4>0,TEXT(B7/B4,\\\"0.0%\\\"),\\\"N/A\\\")\"],\n    [\"Interview\",\"=COUNTIF(Applications!E2:E,\\\"Interview\\\")\",\"=IF(B4>0,TEXT(B8/B4,\\\"0.0%\\\"),\\\"N/A\\\")\"],\n    [\"Offer\",\"=COUNTIF(Applications!E2:E,\\\"Offer\\\")\",\"=IF(B4>0,TEXT(B9/B4,\\\"0.0%\\\"),\\\"N/A\\\")\"],\n    [\"─────\",\"\",\"\"],\n    [\"Response Rate\",\"=IF(B4>0,TEXT((B6+B7+B8+B9)/B4,\\\"0.0%\\\"),\\\"N/A\\\")\",\"\"],\n    [\"Success Rate\",\"=IF(B4>0,TEXT((B7+B8+B9)/B4,\\\"0.0%\\\"),\\\"N/A\\\")\",\"\"]\n  ],\n  _formatRequest: { requests: [\n    { repeatCell: { range: { sheetId: appId, startRowIndex:0, endRowIndex:1, startColumnIndex:0, endColumnIndex:11 },\n      cell: { userEnteredFormat: { backgroundColor:{red:0.15,green:0.35,blue:0.75}, textFormat:{bold:true,fontSize:11,foregroundColor:{red:1,green:1,blue:1}}, horizontalAlignment:'CENTER' }},\n      fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)' }},\n    { updateSheetProperties: { properties: { sheetId:appId, gridProperties:{frozenRowCount:1} }, fields:'gridProperties.frozenRowCount' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:0,endIndex:1},   properties:{pixelSize:110}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:1,endIndex:2},   properties:{pixelSize:200}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:2,endIndex:3},   properties:{pixelSize:280}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:3,endIndex:4},   properties:{pixelSize:120}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:4,endIndex:5},   properties:{pixelSize:140}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:5,endIndex:6},   properties:{pixelSize:300}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:6,endIndex:7},   properties:{pixelSize:220}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:7,endIndex:8},   properties:{pixelSize:110}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:8,endIndex:9},   properties:{pixelSize:300}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:9,endIndex:10},  properties:{pixelSize:150}, fields:'pixelSize' }},\n    { updateDimensionProperties: { range:{sheetId:appId,dimension:'COLUMNS',startIndex:10,endIndex:11}, properties:{pixelSize:180}, fields:'pixelSize' }},\n    { addConditionalFormatRule: { rule: { ranges:[{sheetId:appId,startRowIndex:1,startColumnIndex:4,endColumnIndex:5}], booleanRule: { condition:{type:'TEXT_EQ',values:[{userEnteredValue:'Applied'}]}, format:{backgroundColor:{red:0.85,green:0.92,blue:1.0}} } }, index:0 }},\n    { addConditionalFormatRule: { rule: { ranges:[{sheetId:appId,startRowIndex:1,startColumnIndex:4,endColumnIndex:5}], booleanRule: { condition:{type:'TEXT_EQ',values:[{userEnteredValue:'Rejected'}]}, format:{backgroundColor:{red:1.0,green:0.8,blue:0.8}} } }, index:1 }},\n    { addConditionalFormatRule: { rule: { ranges:[{sheetId:appId,startRowIndex:1,startColumnIndex:4,endColumnIndex:5}], booleanRule: { condition:{type:'TEXT_EQ',values:[{userEnteredValue:'Positive Response'}]}, format:{backgroundColor:{red:0.72,green:0.95,blue:0.72}} } }, index:2 }},\n    { addConditionalFormatRule: { rule: { ranges:[{sheetId:appId,startRowIndex:1,startColumnIndex:4,endColumnIndex:5}], booleanRule: { condition:{type:'TEXT_EQ',values:[{userEnteredValue:'Interview'}]}, format:{backgroundColor:{red:1.0,green:0.95,blue:0.6}} } }, index:3 }},\n    { addConditionalFormatRule: { rule: { ranges:[{sheetId:appId,startRowIndex:1,startColumnIndex:4,endColumnIndex:5}], booleanRule: { condition:{type:'TEXT_EQ',values:[{userEnteredValue:'Offer'}]}, format:{backgroundColor:{red:0.6,green:1.0,blue:0.6}} } }, index:4 }},\n    { repeatCell: { range:{sheetId:dashId,startRowIndex:0,endRowIndex:1,startColumnIndex:0,endColumnIndex:3}, cell:{userEnteredFormat:{backgroundColor:{red:0.1,green:0.3,blue:0.6},textFormat:{bold:true,fontSize:14,foregroundColor:{red:1,green:1,blue:1}}}}, fields:'userEnteredFormat(backgroundColor,textFormat)' }},\n    { updateSheetProperties: { properties:{sheetId:dashId,gridProperties:{frozenRowCount:1}}, fields:'gridProperties.frozenRowCount' }},\n    { repeatCell: { range:{sheetId:logId,startRowIndex:0,endRowIndex:1,startColumnIndex:0,endColumnIndex:10}, cell:{userEnteredFormat:{backgroundColor:{red:0.2,green:0.2,blue:0.2},textFormat:{bold:true,fontSize:10,foregroundColor:{red:1,green:1,blue:1}}}}, fields:'userEnteredFormat(backgroundColor,textFormat)' }},\n    { updateSheetProperties: { properties:{sheetId:logId,gridProperties:{frozenRowCount:1}}, fields:'gridProperties.frozenRowCount' }}\n  ]}\n} }];"
+      },
+      "name": "Build Setup Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        0
+      ],
+      "id": "build-setup-data"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}/values/Applications!A1:K1?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ range:'Applications!A1:K1', majorDimension:'ROWS', values: $json._setupHeaders }) }}",
+        "options": {}
+      },
+      "name": "Write App Headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        -100
+      ],
+      "id": "write-app-headers",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}/values/Classification%20Log!A1:J1?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ range:'Classification Log!A1:J1', majorDimension:'ROWS', values: $json._logHeaders }) }}",
+        "options": {}
+      },
+      "name": "Write Log Headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        60
+      ],
+      "id": "write-log-headers",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}/values/Dashboard!A1:C15?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ range:'Dashboard!A1:C15', majorDimension:'ROWS', values: $json._dashValues }) }}",
+        "options": {}
+      },
+      "name": "Write Dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        220
+      ],
+      "id": "write-dashboard",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $json.spreadsheetId + ':batchUpdate' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json._formatRequest) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Apply Formatting",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        380
+      ],
+      "id": "apply-formatting",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// All 4 setup steps done - pass sheet data through\nreturn [{ json: $('Build Setup Data').first().json }];"
+      },
+      "name": "Setup Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        140
+      ],
+      "id": "setup-done"
+    },
+    {
+      "parameters": {},
+      "name": "🔀 Merge Sheet Ready",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        880,
+        100
+      ],
+      "id": "merge-sheet-ready"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.runMode }}",
+              "rightValue": "manual_backfill",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Backfill or Trigger?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        100
+      ],
+      "id": "backfill-or-trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════════╗\n// ║  MODULE 3: GMAIL FETCH + COLLECT (THE KEY FIX)               ║\n// ║                                                              ║\n// ║  THE PROBLEM with previous version:                          ║\n// ║  Build Queries → outputs 6 items (months)                    ║\n// ║  Fetch node → runs 6 times, each outputs N emails            ║\n// ║  Dedup node → triggered N*6 times (once per email!)          ║\n// ║  = INFINITE LOOP                                             ║\n// ║                                                              ║\n// ║  THE FIX:                                                    ║\n// ║  This single Code node does ALL of:                          ║\n// ║  1. Build monthly queries                                    ║\n// ║  2. Call Gmail API directly (HTTP) for each month            ║\n// ║  3. Collect ALL results into one array                       ║\n// ║  4. Deduplicate by email ID                                  ║\n// ║  5. Filter against cache                                     ║\n// ║  6. Return one item per new email                            ║\n// ║                                                              ║\n// ║  One node in → N emails out (controlled, predictable)        ║\n// ╚══════════════════════════════════════════════════════════════╝\n\nconst data   = $input.first().json;\nconst config = data.config;\n\n// ── Build date-chunked queries ────────────────────────────────\nconst BLOCKED_FROM = [\n  'jobalerts-noreply@linkedin.com','info@jobagent.stepstone.de',\n  'jobalert@indeed.com','alert@indeed.com','noreply@indeed.com','news@mail.xing.com'\n].map(s => `-from:${s}`).join(' ');\n\nconst KEYWORDS = '(bewerbung OR application OR absage OR rejection OR einladung OR interview OR eingangsbestätigung OR eingangsbestaetigung OR angebot OR \"ihre bewerbung\" OR \"deine bewerbung\" OR \"thank you for applying\" OR \"we received\")';\n\nconst after  = config.backfill_after  || '2025/10/01';\nconst before = config.backfill_before || '2026/04/05';\nconst [ay, am] = after.split('/').map(Number);\nconst [by, bm] = before.split('/').map(Number);\n\nconst queries = [];\nlet cy = ay, cm = am;\nwhile (cy < by || (cy === by && cm <= bm)) {\n  const ca = `${cy}/${String(cm).padStart(2,'0')}/01`;\n  let ny = cy, nm = cm + 1;\n  if (nm > 12) { nm = 1; ny++; }\n  const cb = (ny > by || (ny === by && nm > bm)) ? before : `${ny}/${String(nm).padStart(2,'0')}/01`;\n  queries.push({ label: `${cy}-${String(cm).padStart(2,'0')}`, q: `${KEYWORDS} ${BLOCKED_FROM} after:${ca} before:${cb}` });\n  cy = ny; cm = nm;\n  if (cy > by || (cy === by && cm > bm)) break;\n}\nconsole.log(`📅 ${queries.length} monthly queries: ${after} → ${before}`);\n\n// ── Fetch all months via Gmail API ────────────────────────────\n// We use $http (n8n's built-in HTTP helper with OAuth)\n// This keeps it in ONE node so output is controlled\nconst allEmails = [];\nconst seenIds = new Set();\n\nfor (const chunk of queries) {\n  console.log(`  Fetching [${chunk.label}]: ${chunk.q.substring(0, 80)}...`);\n  \n  try {\n    let pageToken = null;\n    let pageCount = 0;\n    let chunkCount = 0;\n    \n    // Paginate through all results for this month\n    do {\n      const params = new URLSearchParams({ q: chunk.q, maxResults: '500', format: 'full' });\n      if (pageToken) params.set('pageToken', pageToken);\n      \n      const resp = await $http.request({\n        method: 'GET',\n        url: `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params.toString()}`,\n        authentication: 'predefinedCredentialType',\n        nodeCredentialType: 'gmailOAuth2'\n      });\n      \n      const messages = resp.messages || [];\n      pageToken = resp.nextPageToken || null;\n      pageCount++;\n      \n      // Fetch full details for each message\n      for (const msg of messages) {\n        if (seenIds.has(msg.id)) continue;\n        seenIds.add(msg.id);\n        \n        try {\n          const detail = await $http.request({\n            method: 'GET',\n            url: `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,\n            authentication: 'predefinedCredentialType',\n            nodeCredentialType: 'gmailOAuth2'\n          });\n          allEmails.push(detail);\n          chunkCount++;\n        } catch(detailErr) {\n          console.warn(`  ⚠️ Failed to fetch details for ${msg.id}: ${detailErr.message}`);\n        }\n      }\n      \n      if (messages.length === 0) break;\n    } while (pageToken && pageCount < 5); // Max 5 pages per month (2500 emails)\n    \n    console.log(`  ✅ [${chunk.label}]: ${chunkCount} emails fetched`);\n  } catch(err) {\n    console.error(`  ❌ [${chunk.label}] fetch failed: ${err.message}`);\n  }\n}\n\nconsole.log(`📥 Total fetched: ${allEmails.length} unique emails across all months`);\n\n// ── Filter against processed cache ───────────────────────────\nconst cache = $getWorkflowStaticData('global');\nif (!cache.processedEmailIds) cache.processedEmailIds = {};\n\n// Clean cache entries older than 90 days\nconst cutoff = Date.now() - (90 * 24 * 60 * 60 * 1000);\nlet cleaned = 0;\nfor (const [id, ts] of Object.entries(cache.processedEmailIds)) {\n  if (typeof ts === 'number' && ts < cutoff) { delete cache.processedEmailIds[id]; cleaned++; }\n}\nif (cleaned > 0) console.log(`🗑️ Cache: cleaned ${cleaned} expired entries`);\nconsole.log(`📦 Cache: ${Object.keys(cache.processedEmailIds).length} entries`);\n\nconst newEmails = allEmails.filter(e => !cache.processedEmailIds[e.id]);\nconsole.log(`🆕 New emails to process: ${newEmails.length} (${allEmails.length - newEmails.length} already cached)`);\n\nif (newEmails.length === 0) {\n  return [{ json: {\n    spreadsheetId: data.spreadsheetId,\n    logSheetId:    String(data.logSheetId || ''),\n    config:        data.config,\n    noEmails:      true,\n    reason:        `All ${allEmails.length} emails already processed`\n  } }];\n}\n\n// ── Return one item per new email ─────────────────────────────\nreturn newEmails.map(email => ({ json: {\n  spreadsheetId:       data.spreadsheetId,\n  logSheetId:          String(data.logSheetId || ''),\n  applicationsSheetId: String(data.applicationsSheetId || ''),\n  config:              data.config,\n  email\n} }));"
+      },
+      "name": "📧 Fetch + Collect All Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        0
+      ],
+      "id": "fetch-collect-all",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "b1EPReC79tl9Ey9y",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle single email from Gmail Trigger\nconst sheetInfo = $('🔀 Merge Sheet Ready').first().json;\nconst email     = sheetInfo.emailData;\nif (!email) {\n  return [{ json: { spreadsheetId: sheetInfo.spreadsheetId, logSheetId: String(sheetInfo.logSheetId||''), applicationsSheetId: String(sheetInfo.applicationsSheetId||''), config: sheetInfo.config, noEmails: true, reason: 'No email from trigger' } }];\n}\nconsole.log(`📧 Single trigger email: ${email.id}`);\nreturn [{ json: { spreadsheetId: sheetInfo.spreadsheetId, logSheetId: String(sheetInfo.logSheetId||''), applicationsSheetId: String(sheetInfo.applicationsSheetId||''), config: sheetInfo.config, email } }];"
+      },
+      "name": "📨 Package Trigger Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        200
+      ],
+      "id": "package-trigger-email"
+    },
+    {
+      "parameters": {},
+      "name": "🔀 Merge All Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1600,
+        100
+      ],
+      "id": "merge-all-sources"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.noEmails }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Any Emails?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        100
+      ],
+      "id": "any-emails"
+    },
+    {
+      "parameters": {},
+      "name": "🛑 No Emails",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        240
+      ],
+      "id": "no-emails"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════╗\n// ║  MODULE 5: PRE-FILTER                                ║\n// ║  Rule-based filter before spending Gemini tokens.    ║\n// ╚══════════════════════════════════════════════════════╝\nconst passed = [], filtered = [];\nlet stats = { total:0, sender:0, subject:0, uni:0, self:0, passed:0 };\n\nfor (const item of $input.all()) {\n  const d = item.json;\n  if (!d.email || d.noEmails) continue;\n  stats.total++;\n  const email = d.email;\n  const cfg   = d.config || {};\n\n  // Extract subject\n  const subject = (\n    email.subject ||\n    (email.payload?.headers||[]).find(h=>h.name?.toLowerCase()==='subject')?.value ||\n    ''\n  ).toLowerCase().trim();\n\n  // Extract sender from Gmail API payload headers\n  let fromEmail = '', fromRaw = '';\n  const fromHeader = (email.payload?.headers||[]).find(h=>h.name?.toLowerCase()==='from');\n  if (fromHeader) {\n    fromRaw = fromHeader.value || '';\n    const m = fromRaw.match(/<([^>]+)>/);\n    fromEmail = (m ? m[1] : fromRaw).toLowerCase().trim();\n  }\n\n  const block = (reason) => { filtered.push({ reason, from: fromEmail, subject: subject.substring(0,60) }); };\n\n  // 1. Exact blocked senders\n  if ((cfg.blocked_senders_exact||[]).some(s => fromEmail === s.toLowerCase())) {\n    stats.sender++; block('exact_sender'); continue;\n  }\n  // 2. Sender patterns\n  if ((cfg.sender_block_patterns||[]).some(p => fromEmail.includes(p.toLowerCase()))) {\n    stats.sender++; block('pattern_sender'); continue;\n  }\n  // 3. Self-sent\n  if ((cfg.user_email||'').toLowerCase() === fromEmail) {\n    stats.self++; block('self_sent'); continue;\n  }\n  // 4. Subject exclusions\n  const badSubj = (cfg.subject_always_exclude||[]).find(kw => subject.includes(kw.toLowerCase()));\n  if (badSubj) {\n    stats.subject++; block(`subject:\"${badSubj.substring(0,30)}\"`); continue;\n  }\n  // 5. University (unless job keyword in subject)\n  if ((cfg.university_patterns||[]).some(p => fromEmail.includes(p.toLowerCase()))) {\n    const jobKw = ['bewerbung','application','absage','rejection','eingangsbestätigung','thank you for applying'];\n    if (!jobKw.some(k => subject.includes(k))) {\n      stats.uni++; block('university'); continue;\n    }\n  }\n\n  stats.passed++;\n  passed.push({ json: { ...d, _fromEmail: fromEmail, _fromRaw: fromRaw } });\n}\n\nconsole.log(`🚫 Pre-filter: ${stats.passed}/${stats.total} passed | Blocked: sender=${stats.sender} subject=${stats.subject} uni=${stats.uni} self=${stats.self}`);\nif (filtered.length > 0) {\n  console.log('Filtered (first 10):');\n  filtered.slice(0,10).forEach((e,i) => console.log(`  ${i+1}. [${e.reason}] \"${e.subject}\" | ${e.from}`));\n}\n\nif (passed.length === 0) {\n  const f = $input.first()?.json||{};\n  return [{ json: { spreadsheetId:f.spreadsheetId, logSheetId:f.logSheetId, config:f.config, noEmails:true, reason:`All ${stats.total} filtered` } }];\n}\nreturn passed;"
+      },
+      "name": "🚫 Pre-Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        0
+      ],
+      "id": "pre-filter"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 6: GEMINI BATCH BUILDER                          ║\n// ╚══════════════════════════════════════════════════════════╝\nconst allItems = $input.all().filter(i => !i.json.noEmails && i.json.email);\nif (allItems.length === 0) return [{ json: { noBatches: true } }];\n\nconst cfg        = allItems[0].json.config || {};\nconst BATCH_SIZE = cfg.gemini_batch_size || 10;\nconst MODEL      = cfg.gemini_model || 'gemini-3.1-flash-lite-preview';\nconst DELAY      = cfg.batch_delay_ms || 2000;\nconst THINKING   = cfg.thinking_level || 'minimal';\nconst MAX_BODY   = 800;\n\nfunction extractBody(email) {\n  // Try plain text from Gmail API payload\n  const findText = (parts) => {\n    if (!parts) return '';\n    for (const p of parts) {\n      if (p.mimeType === 'text/plain' && p.body?.data) {\n        try { return Buffer.from(p.body.data, 'base64').toString('utf-8').substring(0, MAX_BODY); } catch(e) {}\n      }\n      const r = findText(p.parts); if (r) return r;\n    }\n    return '';\n  };\n  const fromParts = findText(email.payload?.parts);\n  if (fromParts) return fromParts;\n  if (email.payload?.body?.data) {\n    try { return Buffer.from(email.payload.body.data, 'base64').toString('utf-8').substring(0, MAX_BODY); } catch(e) {}\n  }\n  return (email.snippet || '').substring(0, MAX_BODY);\n}\n\nfunction extractMeta(item) {\n  const email    = item.json.email || {};\n  const headers  = email.payload?.headers || [];\n  const getH     = (name) => headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value || '';\n  const emailId  = email.id || '';\n  const threadId = email.threadId || '';\n  const subject  = getH('Subject').trim();\n  const from     = item.json._fromRaw || getH('From');\n  const dateStr  = getH('Date');\n  const internalDate = email.internalDate;\n  let parsedDate = new Date().toISOString().split('T')[0];\n  try {\n    if (/^\\d{13}$/.test(String(internalDate))) parsedDate = new Date(parseInt(internalDate)).toISOString().split('T')[0];\n    else if (dateStr) { const d = new Date(dateStr); if (!isNaN(d)) parsedDate = d.toISOString().split('T')[0]; }\n  } catch(e) {}\n  return {\n    emailId, threadId, subject, from, parsedDate,\n    body: extractBody(email),\n    spreadsheetId:       item.json.spreadsheetId,\n    logSheetId:          item.json.logSheetId,\n    applicationsSheetId: item.json.applicationsSheetId,\n    config:              item.json.config\n  };\n}\n\nconst batches = [];\nfor (let i = 0; i < allItems.length; i += BATCH_SIZE) batches.push(allItems.slice(i, i + BATCH_SIZE));\nconsole.log(`📦 ${allItems.length} emails → ${batches.length} batches | Model: ${MODEL}`);\n\nreturn batches.map((batchItems, batchIdx) => {\n  const metas = batchItems.map((item, idx) => ({ index: idx, ...extractMeta(item) }));\n  const emailsText = metas.map((m,i) =>\n    `=== EMAIL ${i+1} ===\\nSubject: ${m.subject}\\nFrom: ${m.from}\\nDate: ${m.parsedDate}\\nBody:\\n${m.body||'(empty)'}`\n  ).join('\\n\\n---\\n\\n');\n\n  const prompt = `You are a job application email classifier for a German job seeker.\nClassify each email. Return ONLY valid JSON, no markdown.\n\nTYPES:\n1. \"application_confirmation\" - Company confirmed receiving YOUR application\n   Signals: Eingangsbestätigung, Bewerbung erhalten, Vielen Dank für Ihre/deine Bewerbung,\n   we received your application, Your Application - [Title], Deine Bewerbung bei [Co],\n   wir haben Ihre Unterlagen erhalten, application confirmed, successfully submitted\n\n2. \"rejection\" - Application declined\n   Signals: leider absagen, leider müssen wir, andere Kandidaten, unfortunately,\n   cannot offer, unable to proceed, nicht berücksichtigen, we regret,\n   decided to move forward with other candidates\n\n3. \"positive_response\" - Interview invite, assessment, offer\n   Signals: einladen, Vorstellungsgespräch, Kennenlerngespräch, assessment,\n   we would like to invite, next steps, please schedule\n\n4. \"not_job_related\" - Everything else (alerts, newsletters, OTPs, marketing)\n\nEXTRACTION RULES:\n- company_name: HIRING company, NOT the ATS platform\n  * \"Bosch Group <notifications@smartrecruiters.com>\" → \"Robert Bosch GmbH\"\n  * \"HR <e113-jobs@m.personio.de>\" → extract from body or use email prefix\n  * \"anna@dekra.com\" → \"DEKRA\"\n  * NEVER use: SmartRecruiters, Personio, Workday, Lever, Greenhouse, Workwise, Onlyfy\n- job_title: Exact title or \"Not Specified\"\n- platform: smartrecruiters.com→SmartRecruiters, m.personio.de→Personio,\n  workday.com→Workday, lever.co→Lever, greenhouse.io→Greenhouse,\n  successfactors.com/eu→SAP SuccessFactors, softgarden.io→Softgarden,\n  onlyfy.jobs→Onlyfy, workwise.io→Workwise, recruitee.com→Recruitee,\n  own domain→Direct, unknown→Direct\n- confidence: 0.9+=clear, 0.7-0.89=likely, 0.55-0.69=uncertain, <0.55→not_job_related\n\nEMAILS:\n${emailsText}\n\n{\"results\":[{\"email_index\":1,\"classification\":\"application_confirmation\",\"company_name\":\"Company\",\"job_title\":\"Title or Not Specified\",\"platform\":\"Platform\",\"confidence\":0.95,\"reasoning\":\"Brief\"}]}`;\n\n  const isGemini3 = MODEL.startsWith('gemini-3');\n  const generationConfig = {\n    temperature: 0.05,\n    maxOutputTokens: Math.max(1500, batchItems.length * 300),\n    responseMimeType: 'application/json'\n  };\n  if (isGemini3 && THINKING) {\n    generationConfig.thinkingConfig = { thinking_level: THINKING };\n  }\n\n  return { json: {\n    batchIndex: batchIdx,\n    totalBatches: batches.length,\n    emailCount: batchItems.length,\n    emailMetas: metas,\n    model: MODEL,\n    delayMs: batchIdx > 0 ? DELAY : 0,\n    geminiRequest: {\n      contents: [{ parts: [{ text: prompt }] }],\n      generationConfig,\n      safetySettings: [\n        { category:'HARM_CATEGORY_HARASSMENT',       threshold:'BLOCK_NONE' },\n        { category:'HARM_CATEGORY_HATE_SPEECH',       threshold:'BLOCK_NONE' },\n        { category:'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold:'BLOCK_NONE' },\n        { category:'HARM_CATEGORY_DANGEROUS_CONTENT', threshold:'BLOCK_NONE' }\n      ]\n    }\n  } };\n});"
+      },
+      "name": "🤖 Build Gemini Batches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        0
+      ],
+      "id": "build-gemini-batches"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "🔁 Loop Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2560,
+        0
+      ],
+      "id": "loop-batches"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nif (input.delayMs > 0) {\n  console.log(`⏳ Delay ${input.delayMs}ms before batch ${input.batchIndex+1}/${input.totalBatches}`);\n  await new Promise(r => setTimeout(r, input.delayMs));\n}\nconsole.log(`📤 Batch ${input.batchIndex+1}/${input.totalBatches} | ${input.emailCount} emails`);\nreturn [$input.first()];"
+      },
+      "name": "⏱️ Delay",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        0
+      ],
+      "id": "delay-node"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $json.model + ':generateContent' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.geminiRequest) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "🧠 Gemini API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3040,
+        0
+      ],
+      "id": "gemini-api",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "CGOdngd6yWJBOIGz",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════╗\n// ║  MODULE 7: RESULT EXPANDER                           ║\n// ╚══════════════════════════════════════════════════════╝\nconst batchMeta = $('⏱️ Delay').first().json;\nconst resp      = $input.first().json;\nconst cache     = $getWorkflowStaticData('global');\nif (!cache.processedEmailIds) cache.processedEmailIds = {};\n\nconst mark = (id) => { if (id) cache.processedEmailIds[id] = Date.now(); };\n\nconst errResult = (meta, msg) => {\n  mark(meta.emailId);\n  return { json: {\n    spreadsheetId: meta.spreadsheetId, logSheetId: String(meta.logSheetId||''),\n    applicationsSheetId: String(meta.applicationsSheetId||''), config: meta.config,\n    is_job_related: false, classification: 'api_error',\n    company_name: 'Error', job_title: 'Error', platform: 'Unknown',\n    status: '', confidence: 0, error: msg.substring(0,300), reasoning: msg.substring(0,200),\n    email_subject: meta.subject, email_from: meta.from,\n    email_date: meta.parsedDate, emailId: meta.emailId, threadId: meta.threadId\n  } };\n};\n\nif (!batchMeta?.emailMetas) return [{ json:{is_job_related:false,classification:'parse_error',company_name:'Error',job_title:'Error',platform:'Unknown',status:'',confidence:0} }];\n\nif (resp.error) {\n  const msg = `Gemini Error ${resp.error.code}: ${resp.error.message||'Unknown'}`;\n  console.error(`❌ ${msg}`);\n  return batchMeta.emailMetas.map(m => errResult(m, msg));\n}\n\n// Extract text (skip thinking parts)\nlet content = '';\nfor (const part of (resp.candidates?.[0]?.content?.parts||[])) {\n  if (part.thought === true) continue;\n  if (part.text) { content = part.text; break; }\n}\nif (!content) content = resp.candidates?.[0]?.content?.parts?.[0]?.text || '';\nif (!content) return batchMeta.emailMetas.map(m => errResult(m, 'Empty Gemini response'));\n\n// Parse JSON\ncontent = content.replace(/```json\\s*/g,'').replace(/```\\s*/g,'').trim();\nconst fb = content.indexOf('{'), lb = content.lastIndexOf('}');\nif (fb===-1||lb===-1) return batchMeta.emailMetas.map(m => errResult(m, `No JSON: ${content.substring(0,150)}`));\n\nlet parsed;\ntry { parsed = JSON.parse(content.substring(fb,lb+1)); }\ncatch(e) {\n  try { parsed = JSON.parse(content.substring(fb,lb+1).replace(/,\\s*([}\\]])/g,'$1')); }\n  catch(e2) { return batchMeta.emailMetas.map(m => errResult(m, `Parse error: ${e.message}`)); }\n}\n\nconst results = parsed.results || [];\nconsole.log(`✅ Batch ${batchMeta.batchIndex+1}/${batchMeta.totalBatches}: ${results.length} results for ${batchMeta.emailMetas.length} emails`);\n\nconst STATUS_MAP = { application_confirmation:'Applied', rejection:'Rejected', positive_response:'Positive Response', not_job_related:'' };\nconst JOB_CLASSES = ['application_confirmation','rejection','positive_response'];\nconst PLATFORM_NAMES = ['smartrecruiters','softgarden','greenhouse','recruitee','onlyfy','personio','workday','lever','successfactors','bamboohr','icims','taleo','broadbean','workwise','hokify','join.com','stepstone','linkedin','indeed','xing','glassdoor','monster'];\n\nfunction detectPlatform(from, ai) {\n  const VALID = ['SmartRecruiters','Onlyfy','Personio','Workday','Lever','Greenhouse','SAP SuccessFactors','BambooHR','Recruitee','Softgarden','iCIMS','Oracle Taleo','Broadbean','LinkedIn','StepStone','Indeed','Xing','JOIN','Workwise','Direct'];\n  if (ai && VALID.includes(ai)) return ai;\n  const f = (from||'').toLowerCase();\n  const MAP = [['smartrecruiters','SmartRecruiters'],['onlyfy','Onlyfy'],['personio','Personio'],['workday','Workday'],['lever.co','Lever'],['greenhouse','Greenhouse'],['successfactors','SAP SuccessFactors'],['bamboohr','BambooHR'],['recruitee','Recruitee'],['softgarden','Softgarden'],['icims','iCIMS'],['taleo','Oracle Taleo'],['broadbean','Broadbean'],['workwise','Workwise'],['linkedin','LinkedIn'],['stepstone','StepStone'],['indeed','Indeed'],['xing.com','Xing'],['join.com','JOIN']];\n  for (const [k,v] of MAP) { if (f.includes(k)) return v; }\n  return 'Direct';\n}\nfunction cleanCompany(name) {\n  if (!name) return null;\n  const n = name.trim();\n  if (PLATFORM_NAMES.some(p => n.toLowerCase().includes(p))) return null;\n  if (['unknown','not specified','n/a','none',''].includes(n.toLowerCase())) return null;\n  return n;\n}\nfunction domainCompany(from) {\n  const m = (from||'').match(/@([\\w.-]+)/);\n  if (!m) return null;\n  const d = m[1].toLowerCase();\n  if (PLATFORM_NAMES.some(p => d.includes(p))) return null;\n  const SKIP = ['gmail.com','yahoo.com','hotmail.com','outlook.com','web.de','gmx.de','gmx.net'];\n  if (SKIP.includes(d)) return null;\n  const name = d.replace(/\\.(com|de|io|net|org|eu|jobs|at|ch|fr|nl|co\\.uk)$/,'').replace(/^(mail|email|reply|noreply|no-reply|notification|notifications|info|career|careers|recruiting|hr|jobs|talent|bewerbung|support|team|hello|pimsprod|donotreply)\\./i,'').replace(/[-_.]/g,' ').trim();\n  if (name.length < 2) return null;\n  return name.split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');\n}\n\n// Map results (1-based from Gemini)\nconst resultMap = {};\nfor (const r of results) {\n  const idx = (r.email_index||1) - 1;\n  if (idx >= 0 && idx < batchMeta.emailMetas.length) resultMap[idx] = r;\n}\nif (Object.keys(resultMap).length===0 && results.length>0) {\n  results.forEach((r,i) => { if (i < batchMeta.emailMetas.length) resultMap[i]=r; });\n}\n\nreturn batchMeta.emailMetas.map((meta, idx) => {\n  const r = resultMap[idx];\n  if (!r) { mark(meta.emailId); return errResult(meta, 'No Gemini result for this email'); }\n  const cls        = JOB_CLASSES.includes(r.classification) ? r.classification : 'not_job_related';\n  const isJob      = JOB_CLASSES.includes(cls);\n  const status     = STATUS_MAP[cls] || '';\n  const platform   = detectPlatform(meta.from, r.platform);\n  const confidence = parseFloat(r.confidence) || 0;\n  const company    = cleanCompany(r.company_name) || domainCompany(meta.from) || 'Unknown';\n  mark(meta.emailId);\n  const ICON = { application_confirmation:'📝', rejection:'❌', positive_response:'🎉', not_job_related:'⬛' };\n  console.log(`  ${ICON[cls]||'❓'} [${idx+1}] ${cls}(${confidence.toFixed(2)}) | ${company} | \"${(meta.subject||'').substring(0,40)}\"`);\n  return { json: {\n    spreadsheetId: meta.spreadsheetId, logSheetId: String(meta.logSheetId||''),\n    applicationsSheetId: String(meta.applicationsSheetId||''), config: meta.config,\n    is_job_related: isJob, classification: cls,\n    company_name: company, job_title: (r.job_title||'Not Specified').trim(),\n    platform, status, confidence,\n    reasoning: (r.reasoning||'').substring(0,200),\n    email_subject: meta.subject, email_from: meta.from,\n    email_date: meta.parsedDate, emailId: meta.emailId, threadId: meta.threadId\n  } };\n});"
+      },
+      "name": "📊 Expand Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3280,
+        0
+      ],
+      "id": "expand-results"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Type-safe classification check - avoids strict IF node issues\nconst d          = $input.first().json;\nconst isJob      = d.is_job_related === true;\nconst confidence = parseFloat(d.confidence) || 0;\nconst status     = (d.status || '').trim();\nconst minConf    = parseFloat(d.config?.min_confidence) || 0.55;\nconst isValid    = isJob && confidence >= minConf && status !== '';\nconsole.log(`🔍 ${d.company_name} | job=${isJob} conf=${confidence.toFixed(2)} status=\"${status}\" → ${isValid?'VALID ✅':'SKIP ❌'}`);\nreturn [{ json: { ...d, _isValidJob: isValid } }];"
+      },
+      "name": "🔍 Classification Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        0
+      ],
+      "id": "classification-check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json._isValidJob }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Valid Job?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3760,
+        0
+      ],
+      "id": "valid-job"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nreturn [{ json: { ...d,\n  _logRow: {\n    Timestamp:       new Date().toISOString(),\n    Classification:  d.classification || 'unknown',\n    'Company Name':  (d.company_name||'Unknown').substring(0,100),\n    'Job Title':     (d.job_title||'Not Specified').substring(0,150),\n    Platform:        d.platform||'Unknown',\n    Confidence:      d.confidence||0,\n    Status:          d.status||'',\n    'Email Subject': (d.email_subject||'').substring(0,150),\n    From:            (d.email_from||'').substring(0,100),\n    Reasoning:       (d.reasoning||d.error||'').substring(0,200)\n  }\n} }];"
+      },
+      "name": "📝 Build Log Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4000,
+        160
+      ],
+      "id": "build-log-entry"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Classification Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json._logRow.Timestamp }}",
+            "Classification": "={{ $json._logRow.Classification }}",
+            "Company Name": "={{ $json._logRow['Company Name'] }}",
+            "Job Title": "={{ $json._logRow['Job Title'] }}",
+            "Platform": "={{ $json._logRow.Platform }}",
+            "Confidence": "={{ $json._logRow.Confidence }}",
+            "Status": "={{ $json._logRow.Status }}",
+            "Email Subject": "={{ $json._logRow['Email Subject'] }}",
+            "From": "={{ $json._logRow.From }}",
+            "Reasoning": "={{ $json._logRow.Reasoning }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Classification",
+              "displayName": "Classification",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company Name",
+              "displayName": "Company Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Job Title",
+              "displayName": "Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Platform",
+              "displayName": "Platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Confidence",
+              "displayName": "Confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email Subject",
+              "displayName": "Email Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "From",
+              "displayName": "From",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reasoning",
+              "displayName": "Reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "📋 Write Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4240,
+        160
+      ],
+      "id": "write-log",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json._isValidJob }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Was Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4480,
+        160
+      ],
+      "id": "was-valid"
+    },
+    {
+      "parameters": {},
+      "name": "🛑 Skip Non-Job",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4720,
+        300
+      ],
+      "id": "skip-non-job"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Applications",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "name": "📖 Read Applications",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4720,
+        100
+      ],
+      "alwaysOutputData": true,
+      "id": "read-applications",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 10: DEDUPLICATION ENGINE                         ║\n// ╚══════════════════════════════════════════════════════════╝\nconst sheetRows  = $('📖 Read Applications').all().filter(i => i.json?.['Company Name'] && Object.keys(i.json).length > 1);\nconst emailData  = $input.first().json;\nconst ssId       = emailData.spreadsheetId || '';\nconst today      = emailData.email_date || new Date().toISOString().split('T')[0];\nconst threadId   = emailData.threadId || '';\nconst newStatus  = emailData.status || '';\n\nconsole.log(`🔍 Dedup: \"${emailData.company_name}\" | \"${emailData.job_title}\" | ${newStatus} | rows:${sheetRows.length}`);\n\nconst skip = (reason) => [{ json: { action:'skip', spreadsheetId:ssId, reason } }];\nif (!newStatus)  return skip('No status');\nif (!ssId)       return skip('No spreadsheetId');\n\nfunction normC(s) { return (s||'').toLowerCase().replace(/\\b(gmbh|ag|inc|ltd|co\\.|corp|se|kg|group|gruppe|holding|services|solutions|technologies|tech|software|germany|deutschland|europe)\\b/gi,'').replace(/[^\\wäöüß\\s]/gi,'').replace(/\\s+/g,' ').trim(); }\nfunction normT(s) { return (s||'').toLowerCase().replace(/\\(m\\/w\\/d\\)|\\(w\\/m\\/d\\)|\\(f\\/m\\/d\\)|\\(all genders\\)|\\(m\\/f\\/d\\)|\\(\\*\\)/gi,'').replace(/[^\\wäöüß\\s]/gi,'').replace(/\\s+/g,' ').trim(); }\nfunction cSim(a,b) {\n  const na=normC(a),nb=normC(b); if(!na||!nb) return 0; if(na===nb) return 1; if(na.includes(nb)||nb.includes(na)) return 0.9;\n  const wa=na.split(' ').filter(w=>w.length>2), wb=nb.split(' ').filter(w=>w.length>2);\n  if(!wa.length||!wb.length) return 0;\n  return wa.filter(w=>wb.some(x=>x===w||x.includes(w)||w.includes(x))).length/Math.max(wa.length,wb.length);\n}\nfunction tSim(a,b) {\n  const na=normT(a),nb=normT(b); if(!na||!nb) return 0; if(na===nb) return 1; if(na.includes(nb)||nb.includes(na)) return 0.85;\n  const wa=na.split(' ').filter(w=>w.length>3), wb=nb.split(' ').filter(w=>w.length>3);\n  if(!wa.length||!wb.length) return 0;\n  return wa.filter(w=>wb.includes(w)).length/Math.max(wa.length,wb.length);\n}\n\nconst PRIORITY = { 'Applied':1,'Positive Response':2,'Interview':3,'Offer':100,'Rejected':99 };\n\n// Thread match\nlet bestMatch = null;\nif (threadId) {\n  for (const ri of sheetRows) {\n    const row = ri.json;\n    if ((row['Thread ID']||'') !== threadId) continue;\n    const et=normT(row['Job Title']||''), nt=normT(emailData.job_title||'');\n    if (et && nt && et!=='not specified' && nt!=='not specified' && tSim(et,nt)<0.25) continue;\n    bestMatch = row;\n    console.log(`  🔗 Thread match: ${row['Company Name']} | ${row['Status']}`);\n    break;\n  }\n}\n\n// Fuzzy match\nif (!bestMatch) {\n  let best=0;\n  for (const ri of sheetRows) {\n    const row=ri.json, cs=cSim(emailData.company_name,row['Company Name']||'');\n    if (cs<0.5) continue;\n    const nt=emailData.job_title, et=row['Job Title']||'';\n    let score = cs;\n    if (nt&&nt!=='Not Specified'&&et&&et!=='Not Specified') {\n      const ts=tSim(nt,et); score=(ts<0.2&&cs<0.95)?0:(cs*0.4+ts*0.6);\n    } else { score=cs*0.75; }\n    if (score>best&&score>=0.4) { best=score; bestMatch=row; }\n  }\n  if (bestMatch) console.log(`  🔍 Fuzzy: ${bestMatch['Company Name']} (${(bestMatch._score||0).toFixed?.(2)})`);\n}\n\nif (bestMatch) {\n  const cur=bestMatch['Status']||'Applied';\n  if (cur===newStatus) return skip(`Already ${cur}`);\n  const cp=PRIORITY[cur]||0, np=PRIORITY[newStatus]||0;\n  const upgrade = np>cp || (newStatus==='Rejected'&&cur!=='Offer');\n  if (upgrade) {\n    const updTitle=(bestMatch['Job Title']==='Not Specified'&&emailData.job_title!=='Not Specified')?emailData.job_title:bestMatch['Job Title'];\n    console.log(`  ⬆️ Upgrade: \"${cur}\" → \"${newStatus}\"`);\n    return [{ json: { action:'update', spreadsheetId:ssId, 'Company Name':bestMatch['Company Name'], 'Job Title':updTitle, 'Status':newStatus, 'Last Updated':today, '_matchThreadId':bestMatch['Thread ID']||'', 'Processed At':new Date().toISOString(), 'Notes':`${cur}→${newStatus} | ${(emailData.email_subject||'').substring(0,100)}` } }];\n  }\n  return skip(`Protected: ${cur}`);\n}\n\nconsole.log(`  ✨ New: ${emailData.company_name}`);\nreturn [{ json: { action:'add', spreadsheetId:ssId, 'Date Applied':today, 'Company Name':emailData.company_name, 'Job Title':emailData.job_title, 'Platform':emailData.platform, 'Status':newStatus, 'Email Subject':(emailData.email_subject||'').substring(0,150), 'Email From':emailData.email_from, 'Last Updated':today, 'Notes':(emailData.reasoning||'').substring(0,150), 'Thread ID':threadId, 'Processed At':new Date().toISOString() } }];"
+      },
+      "name": "🔄 Dedup Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4960,
+        100
+      ],
+      "id": "dedup-engine"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "add",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "leftValue": "={{ $json.spreadsheetId }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Add"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "leftValue": "={{ $json.spreadsheetId }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Update"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "name": "➕ Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        5200,
+        100
+      ],
+      "id": "route-action"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Applications",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date Applied": "={{ $json['Date Applied'] }}",
+            "Company Name": "={{ $json['Company Name'] }}",
+            "Job Title": "={{ $json['Job Title'] }}",
+            "Platform": "={{ $json['Platform'] }}",
+            "Status": "={{ $json['Status'] }}",
+            "Email Subject": "={{ $json['Email Subject'] }}",
+            "Email From": "={{ $json['Email From'] }}",
+            "Last Updated": "={{ $json['Last Updated'] }}",
+            "Notes": "={{ $json['Notes'] }}",
+            "Thread ID": "={{ $json['Thread ID'] }}",
+            "Processed At": "={{ $json['Processed At'] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date Applied",
+              "displayName": "Date Applied",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company Name",
+              "displayName": "Company Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Job Title",
+              "displayName": "Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Platform",
+              "displayName": "Platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email Subject",
+              "displayName": "Email Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email From",
+              "displayName": "Email From",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last Updated",
+              "displayName": "Last Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Thread ID",
+              "displayName": "Thread ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Processed At",
+              "displayName": "Processed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "➕ Add Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        5440,
+        0
+      ],
+      "id": "add-row",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Applications",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Thread ID": "={{ $json['_matchThreadId'] }}",
+            "Job Title": "={{ $json['Job Title'] }}",
+            "Status": "={{ $json['Status'] }}",
+            "Last Updated": "={{ $json['Last Updated'] }}",
+            "Notes": "={{ $json['Notes'] }}",
+            "Processed At": "={{ $json['Processed At'] }}"
+          },
+          "matchingColumns": [
+            "Thread ID"
+          ],
+          "schema": [
+            {
+              "id": "Thread ID",
+              "displayName": "Thread ID",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Job Title",
+              "displayName": "Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last Updated",
+              "displayName": "Last Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Processed At",
+              "displayName": "Processed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "✏️ Update Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        5440,
+        160
+      ],
+      "id": "update-row",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "name": "⏭️ Skip",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        5440,
+        320
+      ],
+      "id": "skip-node"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d=$input.first().json, cfg=d.config||{};\nif (cfg.telegram_enabled!==true) return [$input.first()];\nconst token=cfg.telegram_bot_token||'', chatId=cfg.telegram_chat_id||'';\nif (!token||!chatId) return [$input.first()];\nconst EMOJI={Applied:'📝',Rejected:'❌','Positive Response':'🎉',Interview:'🤝',Offer:'🏆'};\nconst isUpdate = d.action==='update';\nconst text = isUpdate\n  ? `${EMOJI[d['Status']]||'📌'} *Update: ${d['Status']}*\\n🏢 ${d['Company Name']}\\n💼 ${d['Job Title']}\\n📋 ${(d['Notes']||'').substring(0,100)}`\n  : `${EMOJI[d['Status']]||'📌'} *New: ${d['Status']}*\\n🏢 ${d['Company Name']}\\n💼 ${d['Job Title']}\\n🔗 ${d['Platform']}`;\nreturn [{ json: { ...d, _tg_token:token, _tg_chat_id:String(chatId), _tg_text:text } }];"
+      },
+      "name": "📱 Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5680,
+        80
+      ],
+      "id": "telegram-node"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $json._tg_token }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"chat_id\":\"{{ $json._tg_chat_id }}\",\"text\":\"{{ $json._tg_text }}\",\"parse_mode\":\"Markdown\"}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "📱 Send TG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5920,
+        80
+      ],
+      "id": "send-tg",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {},
+      "name": "🔁 Back to Loop",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        6160,
+        80
+      ],
+      "id": "back-to-loop"
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG": {
+      "main": [
+        [
+          {
+            "node": "🔍 Find Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 Find Sheet": {
+      "main": [
+        [
+          {
+            "node": "📋 Resolve Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Resolve Sheet": {
+      "main": [
+        [
+          {
+            "node": "Sheet Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet Exists?": {
+      "main": [
+        [
+          {
+            "node": "Get Tab IDs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tab IDs": {
+      "main": [
+        [
+          {
+            "node": "Extract Existing Tabs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Existing Tabs": {
+      "main": [
+        [
+          {
+            "node": "Merge Tab Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Sheet": {
+      "main": [
+        [
+          {
+            "node": "Extract New Tabs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract New Tabs": {
+      "main": [
+        [
+          {
+            "node": "Merge Tab Info",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Tab Info": {
+      "main": [
+        [
+          {
+            "node": "Is New Sheet?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Sheet?": {
+      "main": [
+        [
+          {
+            "node": "Build Setup Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔀 Merge Sheet Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Setup Data": {
+      "main": [
+        [
+          {
+            "node": "Write App Headers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Log Headers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Dashboard",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Apply Formatting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write App Headers": {
+      "main": [
+        [
+          {
+            "node": "Setup Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Log Headers": {
+      "main": [
+        [
+          {
+            "node": "Setup Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Setup Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Formatting": {
+      "main": [
+        [
+          {
+            "node": "Setup Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Done": {
+      "main": [
+        [
+          {
+            "node": "🔀 Merge Sheet Ready",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "🔀 Merge Sheet Ready": {
+      "main": [
+        [
+          {
+            "node": "Backfill or Trigger?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backfill or Trigger?": {
+      "main": [
+        [
+          {
+            "node": "📧 Fetch + Collect All Emails",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📨 Package Trigger Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📧 Fetch + Collect All Emails": {
+      "main": [
+        [
+          {
+            "node": "🔀 Merge All Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📨 Package Trigger Email": {
+      "main": [
+        [
+          {
+            "node": "🔀 Merge All Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "🔀 Merge All Sources": {
+      "main": [
+        [
+          {
+            "node": "Any Emails?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Emails?": {
+      "main": [
+        [
+          {
+            "node": "🛑 No Emails",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🚫 Pre-Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🚫 Pre-Filter": {
+      "main": [
+        [
+          {
+            "node": "🤖 Build Gemini Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 Build Gemini Batches": {
+      "main": [
+        [
+          {
+            "node": "🔁 Loop Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔁 Loop Batches": {
+      "main": [
+        [],
+        [
+          {
+            "node": "⏱️ Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏱️ Delay": {
+      "main": [
+        [
+          {
+            "node": "🧠 Gemini API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 Gemini API": {
+      "main": [
+        [
+          {
+            "node": "📊 Expand Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Expand Results": {
+      "main": [
+        [
+          {
+            "node": "🔍 Classification Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 Classification Check": {
+      "main": [
+        [
+          {
+            "node": "Valid Job?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Job?": {
+      "main": [
+        [
+          {
+            "node": "📖 Read Applications",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📝 Build Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📖 Read Applications": {
+      "main": [
+        [
+          {
+            "node": "🔄 Dedup Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Dedup Engine": {
+      "main": [
+        [
+          {
+            "node": "➕ Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "➕ Route Action": {
+      "main": [
+        [
+          {
+            "node": "➕ Add Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "✏️ Update Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⏭️ Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "➕ Add Row": {
+      "main": [
+        [
+          {
+            "node": "📝 Build Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✏️ Update Row": {
+      "main": [
+        [
+          {
+            "node": "📝 Build Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Build Log Entry": {
+      "main": [
+        [
+          {
+            "node": "📋 Write Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Write Log": {
+      "main": [
+        [
+          {
+            "node": "Was Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was Valid?": {
+      "main": [
+        [
+          {
+            "node": "📱 Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🛑 Skip Non-Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🛑 Skip Non-Job": {
+      "main": [
+        [
+          {
+            "node": "🔁 Loop Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📱 Telegram": {
+      "main": [
+        [
+          {
+            "node": "📱 Send TG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📱 Send TG": {
+      "main": [
+        [
+          {
+            "node": "🔁 Back to Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔁 Back to Loop": {
+      "main": [
+        [
+          {
+            "node": "🔁 Loop Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏭️ Skip": {
+      "main": [
+        [
+          {
+            "node": "🔁 Loop Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "id": "AFAEP1jIcenYeLEd",
+  "tags": []
+}

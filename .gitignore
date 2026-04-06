@@ -1,0 +1,66 @@
+# ═══════════════════════════════════════════════════════════
+# BewerbLens — Root .gitignore
+# ═══════════════════════════════════════════════════════════
+
+# ── Secrets & Environment ──────────────────────────────────
+.env
+.env.*
+!.env.example
+credentials.json
+token.json
+*.key
+*.pem
+*.p12
+
+# ── Python ─────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Node.js / Next.js ─────────────────────────────────────
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Logs ───────────────────────────────────────────────────
+*.log
+scheduler.log
+tracker.log
+next_dev.log
+
+# ── IDE / Editor ───────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── OS ─────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ── Docker ─────────────────────────────────────────────────
+.docker/
+
+# ── n8n ────────────────────────────────────────────────────
+n8n-backup/

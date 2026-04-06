@@ -1,0 +1,43 @@
+name: Job Application Email Tracker
+
+on:
+  schedule:
+    # Ejecutar cada 4 horas
+    - cron: '0 */4 * * *'
+  workflow_dispatch: # Botón manual "Run Now" en GitHub
+
+jobs:
+  process-emails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        working-directory: ./ai_email_tracker
+        run: pip install -e .
+
+      - name: Decode Gmail Credentials
+        working-directory: ./ai_email_tracker
+        run: |
+          echo "${{ secrets.GMAIL_CREDENTIALS_JSON }}" | base64 -d > credentials.json
+          echo "${{ secrets.GMAIL_TOKEN_JSON }}" | base64 -d > token.json
+
+      - name: Run Tracker Pipeline
+        working-directory: ./ai_email_tracker
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_ENABLED: ${{ secrets.TELEGRAM_ENABLED || 'false' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scheduler.py --once

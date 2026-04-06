@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # Maintain dependencies for Next.js App
+  - package-ecosystem: "npm"
+    directory: "/apps/dashboard"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "frontend"
+      - "security"
+
+  # Maintain dependencies for Python App
+  - package-ecosystem: "pip" # Handles poetry implicitly if configured, but pip is standard
+    directory: "/apps/tracker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "backend"
+      - "security"
+  
+  # Maintain Github Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"

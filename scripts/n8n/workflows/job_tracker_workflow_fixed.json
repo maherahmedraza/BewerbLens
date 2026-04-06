@@ -1,0 +1,1854 @@
+{
+  "name": "Job Application Tracker v11.0 (Modular)",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2000,
+        0
+      ],
+      "id": "manual-trigger"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2000,
+        200
+      ],
+      "id": "gmail-trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "b1EPReC79tl9Ey9y",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════╗\n// ║  MODULE 0: CENTRAL CONFIG                            ║\n// ║  All settings in one place. Edit only this node.    ║\n// ╚══════════════════════════════════════════════════════╝\n\nconst CONFIG = {\n  // ── User Settings ────────────────────────────────────\n  user_email: 'maherahmedraza1@gmail.com',\n\n  // ── Backfill Date Range (YYYY/MM/DD) ─────────────────\n  backfill_after:  '2025/10/01',\n  backfill_before: '2026/04/06',\n\n  // ── Gemini AI Settings ───────────────────────────────\n  // Valid models: gemini-3.1-flash-lite-preview (cheapest)\n  //               gemini-3-flash-preview\n  //               gemini-3.1-pro-preview (best)\n  //               gemini-1.5-flash-8b (stable fallback)\n  gemini_model:      'gemini-3.1-flash-lite-preview',\n  thinking_level:    'minimal',   // minimal | low | medium | high\n  gemini_batch_size: 10,          // emails per Gemini API call\n  batch_delay_ms:    2000,        // ms between batches\n  min_confidence:    0.55,        // below this = not_job_related\n\n  // ── Telegram Notifications ───────────────────────────\n  telegram_enabled:   false,\n  telegram_bot_token: '',\n  telegram_chat_id:   '',\n\n  // ── Gmail Blocked Senders (exact match) ──────────────\n  blocked_senders_exact: [\n    'notifications-noreply@linkedin.com',\n    'jobs-listings@linkedin.com',\n    'jobs-noreply@linkedin.com',\n    'jobalerts-noreply@linkedin.com',\n    'inmail-hit-reply@linkedin.com',\n    'updates-noreply@linkedin.com',\n    'messages-noreply@linkedin.com',\n    'learning-noreply@linkedin.com',\n    'news-noreply@linkedin.com',\n    'premium-noreply@linkedin.com',\n    'news@mail.xing.com',\n    'info@jobagent.stepstone.de',\n    'jobalert@indeed.com',\n    'alert@indeed.com',\n    'noreply@indeed.com',\n    'hello@dataquest.io',\n    'stefan.huber@hokify.com',\n    'noreply@arbeitsagentur.de'\n  ],\n\n  // ── Gmail Blocked Sender Patterns (substring match) ───\n  sender_block_patterns: [\n    'jobalerts-noreply@',\n    'jobs-listings@linkedin',\n    'notifications-noreply@linkedin',\n    'updates-noreply@linkedin',\n    'messages-noreply@linkedin',\n    'learning-noreply@linkedin',\n    'news-noreply@linkedin',\n    'premium-noreply@linkedin',\n    'jobagent@stepstone',\n    'jobagent@indeed',\n    '@hokify.com',\n    'noreply@newsletter.',\n    'jobalert@',\n    'job-alert@'\n  ],\n\n  // ── University Email Patterns ─────────────────────────\n  university_patterns: [\n    'uni-koblenz.de', 'list.uni-', 'studierende@', '@asta.'\n  ],\n\n  // ── Subject Lines to Always Exclude ──────────────────\n  subject_always_exclude: [\n    'new jobs for you', 'neue jobs für dich',\n    'jobs matching your search', 'jobs you might like',\n    'job recommendations', 'new jobs in your area',\n    'companies are looking for candidates like you',\n    'read this article', 'read on linkedin',\n    'published a newsletter', 'published an article',\n    'started a new position', 'is celebrating', 'has a new job',\n    'people viewed your profile', 'search appearances',\n    'your posts got', 'impressions last week',\n    'top voices', 'trending on linkedin',\n    'weekly digest', 'monthly digest', 'connection digest', 'weekly roundup',\n    'career tips', 'karrieretipps',\n    'job alert', 'job-alert', 'jobalert',\n    'new jobs matching', 'jobs matching your',\n    '10+ new jobs', '5+ new jobs',\n    'jobbenachrichtigung', 'job benachrichtigung',\n    'you have 1 new invitation',\n    'asta sitzung', 'vorlesung', 'tutorium', 'klausur',\n    'spannende jobs für dich', 'ich denke diese jobs passen',\n    'system migration',\n    'one-time-passcode', 'one-time password', 'passcode',\n    'verification code', 'bestätigungscode',\n    'ihr zugangscode', 'dein zugangscode',\n    'complete your application', 'finish your application',\n    'bewerbung abschließen'\n  ],\n\n  // ── Known ATS/Platform Domains (used in Gmail query) ──\n  ats_domains: [\n    'smartrecruiters.com', 'softgarden.io', 'greenhouse.io',\n    'recruitee.com', 'onlyfy.jobs', 'personio.de',\n    'workday.com', 'lever.co', 'successfactors.com',\n    'successfactors.eu', 'join.com', 'bamboohr.com',\n    'icims.com', 'taleo.net', 'broadbean.net',\n    'candidatecare.com', 'workwise.io'\n  ]\n};\n\n// Detect trigger source\nlet runMode = 'manual_backfill';\nlet emailData = null;\ntry {\n  const triggerData = $('Gmail Trigger').first().json;\n  if (triggerData && triggerData.id) {\n    runMode = 'email_trigger';\n    emailData = triggerData;\n  }\n} catch(e) {}\n\nconsole.log(`�� Mode: ${runMode}`);\nreturn [{ json: { runMode, emailData, config: CONFIG, triggeredAt: new Date().toISOString() } }];"
+      },
+      "name": "⚙️ CONFIG (Edit Here)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        100
+      ],
+      "id": "config-node"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "name = 'Job Application Tracker' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
+            },
+            {
+              "name": "fields",
+              "value": "files(id,name)"
+            },
+            {
+              "name": "pageSize",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "🔍 Find Spreadsheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1520,
+        100
+      ],
+      "alwaysOutputData": true,
+      "id": "find-sheet",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "8NZtbF8QtSr39HxE",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════╗\n// ║  MODULE 1: SHEET RESOLVER                            ║\n// ║  Checks if sheet exists, routes to create or use.   ║\n// ╚══════════════════════════════════════════════════════╝\n\nconst driveResult = $input.first().json;\nconst modeData = $('⚙️ CONFIG (Edit Here)').first().json;\n\nlet sheetId = null;\nif (driveResult.files?.length > 0) {\n  sheetId = driveResult.files[0].id;\n  console.log(`✅ Found existing sheet: ${sheetId}`);\n} else {\n  console.log(`📋 No sheet found - will create new one`);\n}\n\nreturn [{ json: {\n  sheetExists: !!sheetId,\n  spreadsheetId: sheetId,\n  runMode: modeData.runMode,\n  emailData: modeData.emailData,\n  config: modeData.config,\n  triggeredAt: modeData.triggeredAt\n} }];"
+      },
+      "name": "📋 Sheet Resolver",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1280,
+        100
+      ],
+      "id": "sheet-resolver"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sheetExists }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Sheet Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        100
+      ],
+      "id": "sheet-exists"
+    },
+    {
+      "parameters": {
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "name": "Get Sheet Tabs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        0
+      ],
+      "id": "get-sheet-tabs",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract tab sheet IDs from existing spreadsheet\nconst metadata = $input.first().json;\nconst prev = $('📋 Sheet Resolver').first().json;\n\nlet applicationsSheetId = null, dashboardSheetId = null, logSheetId = null;\n\nfor (const sheet of (metadata.sheets || [])) {\n  const p = sheet.properties || {};\n  if (p.title === 'Applications')      applicationsSheetId = String(p.sheetId);\n  if (p.title === 'Dashboard')         dashboardSheetId    = String(p.sheetId);\n  if (p.title === 'Classification Log') logSheetId         = String(p.sheetId);\n}\n\nconsole.log(`Tab IDs: Apps=${applicationsSheetId} Dash=${dashboardSheetId} Log=${logSheetId}`);\n\nreturn [{ json: {\n  spreadsheetId: prev.spreadsheetId,\n  applicationsSheetId,\n  dashboardSheetId,\n  logSheetId,\n  runMode: prev.runMode,\n  emailData: prev.emailData,\n  config: prev.config,\n  isNewSheet: false\n} }];"
+      },
+      "name": "Extract Existing Tab IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ],
+      "id": "extract-existing-tabs"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"properties\":{\"title\":\"Job Application Tracker\"},\"sheets\":[{\"properties\":{\"title\":\"Applications\",\"gridProperties\":{\"frozenRowCount\":1}}},{\"properties\":{\"title\":\"Dashboard\",\"gridProperties\":{\"frozenRowCount\":1}}},{\"properties\":{\"title\":\"Classification Log\",\"gridProperties\":{\"frozenRowCount\":1}}}]}",
+        "options": {}
+      },
+      "name": "Create New Spreadsheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        200
+      ],
+      "id": "create-spreadsheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract tab IDs from newly created spreadsheet\nconst created = $input.first().json;\nconst prev = $('📋 Sheet Resolver').first().json;\nconst sheets = created.sheets || [];\n\nlet applicationsSheetId = null, dashboardSheetId = null, logSheetId = null;\nfor (const s of sheets) {\n  const p = s.properties || {};\n  if (p.title === 'Applications')       applicationsSheetId = String(p.sheetId);\n  if (p.title === 'Dashboard')          dashboardSheetId    = String(p.sheetId);\n  if (p.title === 'Classification Log') logSheetId          = String(p.sheetId);\n}\n// Fallback to index order\nif (!applicationsSheetId && sheets[0]) applicationsSheetId = String(sheets[0].properties.sheetId);\nif (!dashboardSheetId    && sheets[1]) dashboardSheetId    = String(sheets[1].properties.sheetId);\nif (!logSheetId          && sheets[2]) logSheetId          = String(sheets[2].properties.sheetId);\n\nconsole.log(`New Tab IDs: Apps=${applicationsSheetId} Dash=${dashboardSheetId} Log=${logSheetId}`);\n\nreturn [{ json: {\n  spreadsheetId: created.spreadsheetId,\n  applicationsSheetId,\n  dashboardSheetId,\n  logSheetId,\n  runMode: prev.runMode,\n  emailData: prev.emailData,\n  config: prev.config,\n  isNewSheet: true\n} }];"
+      },
+      "name": "Extract New Tab IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        200
+      ],
+      "id": "extract-new-tabs"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════╗\n// ║  MODULE 2: SHEET SETUP                               ║\n// ║  Initializes headers and formatting for new sheets.  ║\n// ╚══════════════════════════════════════════════════════╝\n\nconst data = $input.first().json;\n\n// If sheet already existed, skip setup entirely\nif (!data.isNewSheet) {\n  console.log('⏭️ Existing sheet - skipping setup');\n  return [{ json: { ...data, setupSkipped: true } }];\n}\n\n// Build all setup requests\nconst appId  = parseInt(data.applicationsSheetId);\nconst dashId = parseInt(data.dashboardSheetId);\nconst logId  = parseInt(data.logSheetId);\n\nconst headerValues = [[\"Date Applied\",\"Company Name\",\"Job Title\",\"Platform\",\"Status\",\"Email Subject\",\"Email From\",\"Last Updated\",\"Notes\",\"Thread ID\",\"Processed At\"]];\nconst logHeaderValues = [[\"Timestamp\",\"Classification\",\"Company Name\",\"Job Title\",\"Platform\",\"Confidence\",\"Status\",\"Email Subject\",\"From\",\"Reasoning\"]];\n\nreturn [{ json: {\n  ...data,\n  setupRequired: true,\n  headerValues,\n  logHeaderValues,\n  batchFormatRequest: { requests: [\n    // Applications header formatting\n    { repeatCell: { range: { sheetId: appId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 11 },\n      cell: { userEnteredFormat: { backgroundColor: { red: 0.15, green: 0.35, blue: 0.75 },\n        textFormat: { bold: true, fontSize: 11, foregroundColor: { red: 1, green: 1, blue: 1 } },\n        horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE' }},\n      fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)' }},\n    { updateSheetProperties: { properties: { sheetId: appId, gridProperties: { frozenRowCount: 1 } }, fields: 'gridProperties.frozenRowCount' }},\n    // Column widths\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 110 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 1, endIndex: 2 }, properties: { pixelSize: 200 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 2, endIndex: 3 }, properties: { pixelSize: 280 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 3, endIndex: 4 }, properties: { pixelSize: 120 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 4, endIndex: 5 }, properties: { pixelSize: 140 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 5, endIndex: 6 }, properties: { pixelSize: 300 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 6, endIndex: 7 }, properties: { pixelSize: 220 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 7, endIndex: 8 }, properties: { pixelSize: 110 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 8, endIndex: 9 }, properties: { pixelSize: 300 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 9, endIndex: 10 }, properties: { pixelSize: 150 }, fields: 'pixelSize' }},\n    { updateDimensionProperties: { range: { sheetId: appId, dimension: 'COLUMNS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: 180 }, fields: 'pixelSize' }},\n    // Status conditional formatting\n    { addConditionalFormatRule: { rule: { ranges: [{ sheetId: appId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'Applied' }] }, format: { backgroundColor: { red: 0.85, green: 0.92, blue: 1.0 } } } }, index: 0 }},\n    { addConditionalFormatRule: { rule: { ranges: [{ sheetId: appId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'Rejected' }] }, format: { backgroundColor: { red: 1.0, green: 0.8, blue: 0.8 } } } }, index: 1 }},\n    { addConditionalFormatRule: { rule: { ranges: [{ sheetId: appId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'Positive Response' }] }, format: { backgroundColor: { red: 0.72, green: 0.95, blue: 0.72 } } } }, index: 2 }},\n    { addConditionalFormatRule: { rule: { ranges: [{ sheetId: appId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'Interview' }] }, format: { backgroundColor: { red: 1.0, green: 0.95, blue: 0.6 } } } }, index: 3 }},\n    { addConditionalFormatRule: { rule: { ranges: [{ sheetId: appId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'Offer' }] }, format: { backgroundColor: { red: 0.6, green: 1.0, blue: 0.6 } } } }, index: 4 }},\n    // Dashboard header\n    { repeatCell: { range: { sheetId: dashId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 3 },\n      cell: { userEnteredFormat: { backgroundColor: { red: 0.1, green: 0.3, blue: 0.6 },\n        textFormat: { bold: true, fontSize: 14, foregroundColor: { red: 1, green: 1, blue: 1 } } } },\n      fields: 'userEnteredFormat(backgroundColor,textFormat)' }},\n    { updateSheetProperties: { properties: { sheetId: dashId, gridProperties: { frozenRowCount: 1 } }, fields: 'gridProperties.frozenRowCount' }},\n    // Log header\n    { repeatCell: { range: { sheetId: logId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 10 },\n      cell: { userEnteredFormat: { backgroundColor: { red: 0.2, green: 0.2, blue: 0.2 },\n        textFormat: { bold: true, fontSize: 10, foregroundColor: { red: 1, green: 1, blue: 1 } } } },\n      fields: 'userEnteredFormat(backgroundColor,textFormat)' }},\n    { updateSheetProperties: { properties: { sheetId: logId, gridProperties: { frozenRowCount: 1 } }, fields: 'gridProperties.frozenRowCount' }}\n  ]}\n} }];"
+      },
+      "name": "🏗️ Sheet Setup Builder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        100
+      ],
+      "id": "sheet-setup-builder"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.setupRequired }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Needs Setup?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        100
+      ],
+      "id": "needs-setup"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}/values/Applications!A1:K1?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ range: 'Applications!A1:K1', majorDimension: 'ROWS', values: $json.headerValues }) }}",
+        "options": {}
+      },
+      "name": "Write App Headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        0
+      ],
+      "id": "write-app-headers",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}/values/Classification%20Log!A1:J1?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ range: 'Classification Log!A1:J1', majorDimension: 'ROWS', values: $json.logHeaderValues }) }}",
+        "options": {}
+      },
+      "name": "Write Log Headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        160
+      ],
+      "id": "write-log-headers",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}/values/Dashboard!A1:C15?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"range\":\"Dashboard!A1:C15\",\"majorDimension\":\"ROWS\",\"values\":[[\"📊 Job Application Dashboard\",\"\",\"\"],[\"Last Updated:\",\"=NOW()\",\"\"],[\"──────────────\",\"\",\"\"],[\"Metric\",\"Count\",\"Rate\"],[\"Total Applications\",\"=COUNTA(Applications!B2:B)\",\"100%\"],[\"Applied (Waiting)\",\"=COUNTIF(Applications!E2:E,\\\"Applied\\\")\",\"=IF(B5>0,TEXT(B6/B5,\\\"0.0%\\\"),\\\"N/A\\\")\"],[\"Rejected\",\"=COUNTIF(Applications!E2:E,\\\"Rejected\\\")\",\"=IF(B5>0,TEXT(B7/B5,\\\"0.0%\\\"),\\\"N/A\\\")\"],[\"Positive Response\",\"=COUNTIF(Applications!E2:E,\\\"Positive Response\\\")\",\"=IF(B5>0,TEXT(B8/B5,\\\"0.0%\\\"),\\\"N/A\\\")\"],[\"Interview\",\"=COUNTIF(Applications!E2:E,\\\"Interview\\\")\",\"=IF(B5>0,TEXT(B9/B5,\\\"0.0%\\\"),\\\"N/A\\\")\"],[\"──────────────\",\"\",\"\"],[\"Response Rate\",\"=IF(B5>0,TEXT((B7+B8+B9)/B5,\\\"0.0%\\\"),\\\"N/A\\\")\",\"\"],[\"Success Rate\",\"=IF(B5>0,TEXT((B8+B9)/B5,\\\"0.0%\\\"),\\\"N/A\\\")\",\"\"],[\"──────────────\",\"\",\"\"],[\"LinkedIn\",\"=COUNTIF(Applications!D2:D,\\\"LinkedIn\\\")\",\"\"],[\"StepStone\",\"=COUNTIF(Applications!D2:D,\\\"StepStone\\\")\",\"\"]]}",
+        "options": {}
+      },
+      "name": "Write Dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        320
+      ],
+      "id": "write-dashboard",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $json.spreadsheetId + ':batchUpdate' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.batchFormatRequest) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Apply Formatting",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        480
+      ],
+      "id": "apply-formatting",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pass through sheet info after all setup steps complete\nconst d = $('🏗️ Sheet Setup Builder').first().json;\nreturn [{ json: d }];"
+      },
+      "name": "Setup Complete",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        160
+      ],
+      "id": "setup-complete"
+    },
+    {
+      "parameters": {},
+      "name": "🔀 Merge Sheet Info",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        640,
+        100
+      ],
+      "id": "merge-sheet-info"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.runMode }}",
+              "rightValue": "manual_backfill",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Backfill or Trigger?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        100
+      ],
+      "id": "backfill-or-trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 3: GMAIL QUERY BUILDER (FIXED)                   ║\n// ║  Single query instead of monthly chunks.                  ║\n// ║  Uses staticData checkpoint for incremental fetching.    ║\n// ║  FIX: Eliminates the 4x loop between Fetch↔Deduplicate  ║\n// ╚══════════════════════════════════════════════════════════╝\n\nconst data = $input.first().json;\nconst config = data.config;\n\n// Usar staticData para checkpoint persistente\nconst cache = $getWorkflowStaticData('global');\n\n// Determinar la fecha de inicio de la búsqueda\n// Primera ejecución: usa backfill_after del config\n// Ejecuciones siguientes: usa el checkpoint guardado\nlet afterDate = config.backfill_after || '2025/10/01';\n\nif (cache.lastCheckpointDate) {\n  afterDate = cache.lastCheckpointDate;\n  console.log(`📅 Incremental mode — fetching since checkpoint: ${afterDate}`);\n} else {\n  console.log(`📅 First run (backfill) — fetching since: ${afterDate}`);\n}\n\nconst beforeDate = config.backfill_before || '2026/04/05';\n\n// Exclusiones server-side en la query de Gmail\nconst queryExclusions = [\n  'jobalerts-noreply@linkedin.com',\n  'info@jobagent.stepstone.de',\n  'jobalert@indeed.com',\n  'alert@indeed.com',\n  'noreply@indeed.com',\n  'news@mail.xing.com'\n].map(s => `-from:${s}`).join(' ');\n\n// Keywords de búsqueda (idénticos al original)\nconst keywords = [\n  'bewerbung', 'application', 'absage', 'rejection',\n  'einladung', 'interview', 'eingangsbestätigung',\n  'eingangsbestaetigung', 'angebot', 'offer',\n  '\"thank you for applying\"', '\"we received\"',\n  '\"ihre bewerbung\"', '\"deine bewerbung\"'\n].join(' OR ');\n\n// ═══════════════════════════════════════════════════════════\n// KEY FIX: UNA SOLA query en vez de chunks mensuales.\n// returnAll:true en el nodo Gmail maneja la paginación.\n// Los chunks mensuales eran innecesarios y causaban el loop.\n// ═══════════════════════════════════════════════════════════\nconst query = `(${keywords}) ${queryExclusions} after:${afterDate} before:${beforeDate}`;\n\nconsole.log(`📧 Single query (no monthly chunks): ${query.substring(0, 130)}...`);\n\n// Retornar UN solo item — Fetch Emails se ejecuta 1 vez, no 4+\nreturn [{ json: {\n  ...data,\n  chunkLabel: 'single',\n  gmailQuery: query\n} }];"
+      },
+      "name": "📧 Build Gmail Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "build-gmail-queries"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "simple": false,
+        "filters": {
+          "q": "={{ $json.gmailQuery }}"
+        },
+        "options": {}
+      },
+      "name": "📥 Fetch Emails (Per Month)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1360,
+        0
+      ],
+      "id": "fetch-emails-per-month",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "b1EPReC79tl9Ey9y",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 4: EMAIL DEDUPLICATOR (FIXED)                    ║\n// ║  Now saves checkpoint date after successful processing.  ║\n// ║  Cache persists across runs via $getWorkflowStaticData.  ║\n// ╚══════════════════════════════════════════════════════════╝\n\nconst allItems = $input.all();\nconst sheetInfo = $('🔀 Merge Sheet Info').first().json;\n\nconsole.log(`📥 Total fetched: ${allItems.length}`);\n\n// Deduplicate by Gmail message ID\nconst seen = new Map();\nfor (const item of allItems) {\n  const email = item.json;\n  const id = email.id || email.messageId;\n  if (id && !seen.has(id)) seen.set(id, email);\n}\nconst unique = Array.from(seen.values());\nconsole.log(`🔄 After dedup: ${unique.length} unique emails`);\n\n// Cache management\nconst cache = $getWorkflowStaticData('global');\nif (!cache.processedEmailIds) cache.processedEmailIds = {};\n\n// Clean entries older than 90 days\nconst cutoff = Date.now() - (90 * 24 * 60 * 60 * 1000);\nlet cleaned = 0;\nfor (const [id, ts] of Object.entries(cache.processedEmailIds)) {\n  if (typeof ts === 'number' && ts < cutoff) { delete cache.processedEmailIds[id]; cleaned++; }\n}\nif (cleaned > 0) console.log(`🗑️ Cache: removed ${cleaned} expired entries`);\nconsole.log(`📦 Cache: ${Object.keys(cache.processedEmailIds).length} entries`);\n\n// Filter new emails\nconst newEmails = unique.filter(e => {\n  const id = e.id || e.messageId;\n  return id && !cache.processedEmailIds[id];\n});\n\nconsole.log(`🆕 New to process: ${newEmails.length} | Already cached: ${unique.length - newEmails.length}`);\n\n// ═══════════════════════════════════════════════════════════\n// KEY FIX: Guardar checkpoint para que la próxima ejecución\n// solo busque emails desde esta fecha.\n// Esto elimina la necesidad de re-fetchar todo el historial.\n// ═══════════════════════════════════════════════════════════\nconst today = new Date();\nconst yyyy = today.getFullYear();\nconst mm = String(today.getMonth() + 1).padStart(2, '0');\nconst dd = String(today.getDate()).padStart(2, '0');\ncache.lastCheckpointDate = `${yyyy}/${mm}/${dd}`;\nconsole.log(`💾 Checkpoint saved: ${cache.lastCheckpointDate}`);\n\nif (newEmails.length === 0) {\n  return [{ json: {\n    spreadsheetId: sheetInfo.spreadsheetId,\n    logSheetId: String(sheetInfo.logSheetId || ''),\n    config: sheetInfo.config,\n    noEmails: true,\n    reason: `All ${unique.length} emails already processed`\n  } }];\n}\n\nreturn newEmails.map(email => ({ json: {\n  spreadsheetId: sheetInfo.spreadsheetId,\n  logSheetId: String(sheetInfo.logSheetId || ''),\n  applicationsSheetId: String(sheetInfo.applicationsSheetId || ''),\n  config: sheetInfo.config,\n  email\n} }));"
+      },
+      "name": "🔄 Deduplicate Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        0
+      ],
+      "id": "deduplicate-emails"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle single email from Gmail Trigger\nconst sheetInfo = $('🔀 Merge Sheet Info').first().json;\nconst email = sheetInfo.emailData;\n\nif (!email) {\n  return [{ json: {\n    spreadsheetId: sheetInfo.spreadsheetId,\n    logSheetId: String(sheetInfo.logSheetId || ''),\n    applicationsSheetId: String(sheetInfo.applicationsSheetId || ''),\n    config: sheetInfo.config,\n    noEmails: true,\n    reason: 'No email data from trigger'\n  } }];\n}\n\nconsole.log(`📧 Processing single triggered email: ${email.id}`);\nreturn [{ json: {\n  spreadsheetId: sheetInfo.spreadsheetId,\n  logSheetId: String(sheetInfo.logSheetId || ''),\n  applicationsSheetId: String(sheetInfo.applicationsSheetId || ''),\n  config: sheetInfo.config,\n  email\n} }];"
+      },
+      "name": "📨 Package Trigger Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        200
+      ],
+      "id": "package-trigger-email"
+    },
+    {
+      "parameters": {},
+      "name": "🔀 Merge Email Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1840,
+        100
+      ],
+      "id": "merge-email-sources"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.noEmails }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Any Emails?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        100
+      ],
+      "id": "any-emails"
+    },
+    {
+      "parameters": {},
+      "name": "🛑 No Emails Exit",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        240
+      ],
+      "id": "no-emails-exit"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 5: PRE-FILTER                                    ║\n// ║  Fast rule-based filtering BEFORE spending Gemini tokens.║\n// ║  Blocks: job alerts, newsletters, OTP codes, etc.        ║\n// ╚══════════════════════════════════════════════════════════╝\n\nconst passed = [];\nconst filtered = [];\nlet stats = { total: 0, sender: 0, subject: 0, university: 0, self: 0, passed: 0 };\n\nfor (const item of $input.all()) {\n  const d = item.json;\n  if (!d.email || d.noEmails) continue;\n  stats.total++;\n\n  const email = d.email;\n  const cfg = d.config || {};\n\n  // ── Extract subject ────────────────────────────────────\n  const subject = (\n    email.subject ||\n    email.headers?.subject ||\n    email.payload?.headers?.find(h => h.name?.toLowerCase() === 'subject')?.value ||\n    ''\n  ).toLowerCase().trim();\n\n  // ── Extract sender email ───────────────────────────────\n  let fromEmail = '', fromRaw = '';\n  if (typeof email.from === 'string') {\n    fromRaw = email.from;\n    const m = email.from.match(/<([^>]+)>/);\n    fromEmail = (m ? m[1] : email.from).toLowerCase();\n  } else if (email.from?.value?.[0]) {\n    fromEmail = (email.from.value[0].address || '').toLowerCase();\n    fromRaw = email.from.value[0].name\n      ? `${email.from.value[0].name} <${fromEmail}>`\n      : fromEmail;\n  } else if (email.headers?.from) {\n    fromRaw = email.headers.from;\n    const m = email.headers.from.match(/<([^>]+)>/);\n    fromEmail = (m ? m[1] : email.headers.from).toLowerCase();\n  }\n\n  // ── FILTER 1: Exact blocked senders ───────────────────\n  if ((cfg.blocked_senders_exact || []).some(s => fromEmail === s.toLowerCase())) {\n    stats.sender++;\n    filtered.push({ reason: 'blocked_sender', from: fromEmail, subject: subject.substring(0,60) });\n    continue;\n  }\n\n  // ── FILTER 2: Sender patterns ──────────────────────────\n  if ((cfg.sender_block_patterns || []).some(p => fromEmail.includes(p.toLowerCase()))) {\n    stats.sender++;\n    filtered.push({ reason: 'sender_pattern', from: fromEmail, subject: subject.substring(0,60) });\n    continue;\n  }\n\n  // ── FILTER 3: Self-sent ────────────────────────────────\n  if ((cfg.user_email || '').toLowerCase() === fromEmail) {\n    stats.self++;\n    filtered.push({ reason: 'self_sent', from: fromEmail, subject: subject.substring(0,60) });\n    continue;\n  }\n\n  // ── FILTER 4: Subject exclusions ──────────────────────\n  const badSubject = (cfg.subject_always_exclude || []).find(kw => subject.includes(kw.toLowerCase()));\n  if (badSubject) {\n    stats.subject++;\n    filtered.push({ reason: `subject:\"${badSubject}\"`, from: fromEmail, subject: subject.substring(0,60) });\n    continue;\n  }\n\n  // ── FILTER 5: University (unless job keyword present) ──\n  if ((cfg.university_patterns || []).some(p => fromEmail.includes(p.toLowerCase()))) {\n    const jobKw = ['bewerbung','application','absage','rejection','eingangsbestätigung','thank you for applying'];\n    if (!jobKw.some(k => subject.includes(k))) {\n      stats.university++;\n      filtered.push({ reason: 'university', from: fromEmail, subject: subject.substring(0,60) });\n      continue;\n    }\n  }\n\n  stats.passed++;\n  passed.push({ json: { ...d, _fromEmail: fromEmail, _fromRaw: fromRaw } });\n}\n\nconsole.log(`📊 Pre-filter: ${stats.passed}/${stats.total} passed`);\nconsole.log(`❌ Filtered: Sender=${stats.sender} Subject=${stats.subject} Uni=${stats.university} Self=${stats.self}`);\nif (filtered.length > 0) {\n  console.log('🔍 Filtered list (first 15):');\n  filtered.slice(0,15).forEach((e,i) => console.log(`  ${i+1}. [${e.reason}] \"${e.subject}\" | ${e.from}`));\n}\n\nif (passed.length === 0) {\n  const f = $input.first()?.json || {};\n  return [{ json: {\n    spreadsheetId: f.spreadsheetId, logSheetId: f.logSheetId,\n    config: f.config, noEmails: true,\n    reason: `All ${stats.total} filtered (sender:${stats.sender} subject:${stats.subject})`\n  } }];\n}\nreturn passed;"
+      },
+      "name": "🚫 Pre-Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        0
+      ],
+      "id": "pre-filter"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 6: GEMINI BATCH BUILDER                          ║\n// ║  Groups emails into batches, extracts body text,         ║\n// ║  builds optimized prompts for the Gemini API.            ║\n// ╚══════════════════════════════════════════════════════════╝\n\nconst allItems = $input.all();\nconst firstValid = allItems.find(i => !i.json.noEmails);\n\nif (!firstValid) {\n  return [{ json: { noBatches: true } }];\n}\n\nconst cfg = firstValid.json.config || {};\nconst BATCH_SIZE = cfg.gemini_batch_size || 10;\nconst MODEL = cfg.gemini_model || 'gemini-3.1-flash-lite-preview';\nconst DELAY = cfg.batch_delay_ms || 2000;\nconst THINKING = cfg.thinking_level || 'minimal';\nconst MAX_BODY = 800;\n\nfunction extractBody(email) {\n  if (email.textPlain) return email.textPlain.substring(0, MAX_BODY);\n  if (email.text)      return email.text.substring(0, MAX_BODY);\n\n  const findInParts = (parts) => {\n    if (!parts) return '';\n    for (const p of parts) {\n      if (p.mimeType === 'text/plain' && p.body?.data) {\n        try { return Buffer.from(p.body.data, 'base64').toString('utf-8').substring(0, MAX_BODY); } catch(e) {}\n        try { return Buffer.from(p.body.data, 'base64url').toString('utf-8').substring(0, MAX_BODY); } catch(e) {}\n      }\n      const nested = findInParts(p.parts);\n      if (nested) return nested;\n    }\n    return '';\n  };\n\n  const fromParts = findInParts(email.payload?.parts);\n  if (fromParts) return fromParts;\n\n  if (email.payload?.body?.data) {\n    try { return Buffer.from(email.payload.body.data, 'base64').toString('utf-8').substring(0, MAX_BODY); } catch(e) {}\n  }\n\n  return (email.snippet || '').substring(0, MAX_BODY);\n}\n\nfunction extractMeta(item) {\n  const email = item.json.email || {};\n\n  const emailId  = email.id || email.messageId || '';\n  const threadId = email.threadId || email.thread_id || '';\n\n  const subject = (\n    email.subject ||\n    email.headers?.subject ||\n    email.payload?.headers?.find(h => h.name === 'Subject')?.value ||\n    ''\n  ).trim();\n\n  let from = item.json._fromRaw || '';\n  if (!from) {\n    if (typeof email.from === 'string') from = email.from;\n    else if (email.from?.value?.[0]?.address) {\n      const v = email.from.value[0];\n      from = v.name ? `${v.name} <${v.address}>` : v.address;\n    } else if (email.headers?.from) from = email.headers.from;\n  }\n\n  const rawDate = email.date || email.internalDate || email.headers?.date || '';\n  let parsedDate = new Date().toISOString().split('T')[0];\n  try {\n    if (/^\\d{13}$/.test(String(rawDate))) parsedDate = new Date(parseInt(rawDate)).toISOString().split('T')[0];\n    else if (/^\\d{10}$/.test(String(rawDate))) parsedDate = new Date(parseInt(rawDate) * 1000).toISOString().split('T')[0];\n    else if (rawDate) { const d = new Date(rawDate); if (!isNaN(d)) parsedDate = d.toISOString().split('T')[0]; }\n  } catch(e) {}\n\n  const body = extractBody(email);\n\n  return {\n    emailId, threadId, subject, from, parsedDate, body,\n    spreadsheetId: item.json.spreadsheetId,\n    logSheetId: item.json.logSheetId,\n    applicationsSheetId: item.json.applicationsSheetId,\n    config: item.json.config\n  };\n}\n\n// Build batches\nconst batches = [];\nfor (let i = 0; i < allItems.length; i += BATCH_SIZE) {\n  batches.push(allItems.slice(i, i + BATCH_SIZE));\n}\nconsole.log(`📦 ${allItems.length} emails → ${batches.length} batches (max ${BATCH_SIZE}) | Model: ${MODEL} | Thinking: ${THINKING}`);\n\nreturn batches.map((batchItems, batchIdx) => {\n  const metas = batchItems.map((item, idx) => ({ index: idx, ...extractMeta(item) }));\n\n  const emailsText = metas.map((m, i) =>\n    `=== EMAIL ${i+1} ===\\nSubject: ${m.subject}\\nFrom: ${m.from}\\nDate: ${m.parsedDate}\\nBody:\\n${m.body || '(empty)'}`\n  ).join('\\n\\n---\\n\\n');\n\n  const prompt = `You are a job application email classifier for a German job seeker.\nClassify each email into exactly one of 4 types. Return ONLY valid JSON.\n\nTYPES:\n1. \"application_confirmation\" - Company confirmed receiving YOUR job application\n   → Eingangsbestätigung, Bewerbung erhalten, Vielen Dank für Ihre/deine Bewerbung,\n     we received your application, application confirmed, Your Application - [Title],\n     Deine Bewerbung bei [Company], wir haben Ihre Unterlagen erhalten\n\n2. \"rejection\" - Application was declined\n   → leider absagen, leider müssen wir, andere Kandidaten, unfortunately,\n     cannot offer, unable to proceed, nicht berücksichtigen, we regret,\n     have decided to move forward with other candidates\n\n3. \"positive_response\" - Interview invite, assessment, or offer\n   → einladen, Vorstellungsgespräch, Kennenlerngespräch, assessment,\n     we would like to invite, next steps, please schedule, können wir einen Termin\n\n4. \"not_job_related\" - Anything else\n   → job alerts, newsletters, OTP codes, account confirmations, marketing\n\nEXTRACTION:\n- company_name: The HIRING company, NOT the ATS/platform\n  * \"Bosch Group <notifications@smartrecruiters.com>\" → \"Robert Bosch GmbH\"\n  * \"HR <e113-jobs@m.personio.de>\" → extract from body or use \"E113\"\n  * \"anna@dekra.com\" → \"DEKRA\"\n  * NEVER use: SmartRecruiters, Personio, Workday, Lever, Greenhouse, Workwise, Onlyfy\n\n- job_title: Exact role title. \"Not Specified\" if unclear.\n\n- platform:\n  smartrecruiters.com→SmartRecruiters, m.personio.de→Personio,\n  workday.com→Workday, lever.co→Lever, greenhouse.io→Greenhouse,\n  successfactors.com/eu→SAP SuccessFactors, softgarden.io→Softgarden,\n  onlyfy.jobs→Onlyfy, workwise.io→Workwise, recruitee.com→Recruitee,\n  bamboohr.com→BambooHR, company own domain→Direct, unknown→Direct\n\n- confidence: 0.9+=very clear, 0.7-0.89=likely, 0.55-0.69=uncertain, <0.55=not_job_related\n\nEMAILS:\n${emailsText}\n\nJSON response only:\n{\"results\":[{\"email_index\":1,\"classification\":\"application_confirmation\",\"company_name\":\"Company\",\"job_title\":\"Title or Not Specified\",\"platform\":\"Platform\",\"confidence\":0.95,\"reasoning\":\"Brief reason\"}]}`;\n\n  // Build generationConfig with thinking support for Gemini 3 models\n  const isGemini3 = MODEL.includes('gemini-3');\n  const generationConfig = {\n    temperature: 0.05,\n    maxOutputTokens: Math.max(1500, batchItems.length * 300),\n    responseMimeType: 'application/json'\n  };\n  if (isGemini3) {\n    generationConfig.thinkingConfig = { thinkingBudget: THINKING === 'minimal' ? 0 : undefined, thinking_level: THINKING };\n  }\n\n  return { json: {\n    batchIndex: batchIdx,\n    totalBatches: batches.length,\n    emailCount: batchItems.length,\n    emailMetas: metas,\n    model: MODEL,\n    delayMs: batchIdx > 0 ? DELAY : 0,\n    geminiRequest: {\n      contents: [{ parts: [{ text: prompt }] }],\n      generationConfig,\n      safetySettings: [\n        { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },\n        { category: 'HARM_CATEGORY_HATE_SPEECH',        threshold: 'BLOCK_NONE' },\n        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',  threshold: 'BLOCK_NONE' },\n        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT',  threshold: 'BLOCK_NONE' }\n      ]\n    }\n  } };\n});"
+      },
+      "name": "🤖 Build Gemini Batches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2560,
+        0
+      ],
+      "id": "build-gemini-batches"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "🔁 Loop Over Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2800,
+        0
+      ],
+      "id": "loop-batches"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nif (input.delayMs > 0) {\n  console.log(`⏳ Waiting ${input.delayMs}ms before batch ${input.batchIndex + 1}/${input.totalBatches}`);\n  await new Promise(r => setTimeout(r, input.delayMs));\n}\nconsole.log(`📤 Sending batch ${input.batchIndex + 1}/${input.totalBatches} (${input.emailCount} emails) to Gemini`);\nreturn [$input.first()];"
+      },
+      "name": "⏱️ Rate Limit Delay",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        0
+      ],
+      "id": "rate-limit-delay"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $json.model + ':generateContent' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.geminiRequest) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "🧠 Gemini API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3280,
+        0
+      ],
+      "id": "gemini-api-call",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 8000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "CGOdngd6yWJBOIGz",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 7: RESULT EXPANDER                               ║\n// ║  Parses Gemini JSON response, maps results back to       ║\n// ║  original emails, marks processed in cache.              ║\n// ╚══════════════════════════════════════════════════════════╝\n\nconst batchMeta = $('⏱️ Rate Limit Delay').first().json;\nconst resp      = $input.first().json;\n\nconst cache = $getWorkflowStaticData('global');\nif (!cache.processedEmailIds) cache.processedEmailIds = {};\n\nconst markProcessed = (emailId) => {\n  if (emailId) cache.processedEmailIds[emailId] = Date.now();\n};\n\nconst makeErrorResult = (meta, errMsg) => {\n  markProcessed(meta.emailId);\n  return { json: {\n    spreadsheetId:       meta.spreadsheetId,\n    logSheetId:          String(meta.logSheetId || ''),\n    applicationsSheetId: String(meta.applicationsSheetId || ''),\n    config:              meta.config,\n    is_job_related:      false,\n    classification:      'api_error',\n    company_name:        'Error',\n    job_title:           'Error',\n    platform:            'Unknown',\n    status:              '',\n    confidence:          0,\n    error:               errMsg.substring(0, 300),\n    reasoning:           errMsg.substring(0, 200),\n    email_subject:       meta.subject,\n    email_from:          meta.from,\n    email_date:          meta.parsedDate,\n    emailId:             meta.emailId,\n    threadId:            meta.threadId\n  } };\n};\n\nif (!batchMeta?.emailMetas) {\n  console.error('❌ No batch metadata found');\n  return [{ json: { is_job_related: false, classification: 'parse_error', company_name: 'Error', job_title: 'Error', platform: 'Unknown', status: '', confidence: 0 } }];\n}\n\n// Handle API error response\nif (resp.error) {\n  const msg = `Gemini Error ${resp.error.code}: ${resp.error.message || 'Unknown'}`;\n  console.error(`❌ ${msg}`);\n  return batchMeta.emailMetas.map(m => makeErrorResult(m, msg));\n}\n\n// Extract text from response (skip thinking parts)\nlet content = '';\nfor (const part of (resp.candidates?.[0]?.content?.parts || [])) {\n  if (part.thought === true) continue;\n  if (part.text) { content = part.text; break; }\n}\nif (!content) content = resp.candidates?.[0]?.content?.parts?.[0]?.text || '';\n\nif (!content) {\n  console.error('❌ Empty Gemini response');\n  return batchMeta.emailMetas.map(m => makeErrorResult(m, 'Empty response from Gemini'));\n}\n\n// Clean and parse JSON\ncontent = content.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\nconst fb = content.indexOf('{'), lb = content.lastIndexOf('}');\nif (fb === -1 || lb === -1) {\n  const msg = `No JSON in response: ${content.substring(0, 200)}`;\n  return batchMeta.emailMetas.map(m => makeErrorResult(m, msg));\n}\n\nlet parsed;\ntry {\n  parsed = JSON.parse(content.substring(fb, lb + 1));\n} catch(e) {\n  try {\n    const fixed = content.substring(fb, lb + 1).replace(/,\\s*([}\\]])/g, '$1');\n    parsed = JSON.parse(fixed);\n  } catch(e2) {\n    const msg = `JSON parse failed: ${e.message}`;\n    return batchMeta.emailMetas.map(m => makeErrorResult(m, msg));\n  }\n}\n\nconst results = parsed.results || [];\nconsole.log(`✅ Batch ${batchMeta.batchIndex + 1}/${batchMeta.totalBatches}: ${results.length} results for ${batchMeta.emailMetas.length} emails`);\n\n// Constants\nconst STATUS_MAP = {\n  application_confirmation: 'Applied',\n  rejection:                'Rejected',\n  positive_response:        'Positive Response',\n  not_job_related:          ''\n};\nconst JOB_CLASSES = ['application_confirmation', 'rejection', 'positive_response'];\n\nconst PLATFORM_DOMAINS = ['smartrecruiters','softgarden','greenhouse','recruitee',\n  'onlyfy','personio','workday','lever','successfactors','bamboohr','icims',\n  'taleo','broadbean','workwise','hokify','join.com','stepstone','linkedin',\n  'indeed','xing','glassdoor','monster'];\n\nfunction detectPlatform(fromStr, aiPlatform) {\n  const VALID_PLATFORMS = ['SmartRecruiters','Onlyfy','Personio','Workday','Lever',\n    'Greenhouse','SAP SuccessFactors','BambooHR','Recruitee','Softgarden','iCIMS',\n    'Oracle Taleo','Broadbean','LinkedIn','StepStone','Indeed','Xing','JOIN','Workwise','Direct'];\n  if (aiPlatform && VALID_PLATFORMS.includes(aiPlatform)) return aiPlatform;\n  const f = (fromStr || '').toLowerCase();\n  const MAP = [\n    ['smartrecruiters','SmartRecruiters'],['onlyfy','Onlyfy'],['personio','Personio'],\n    ['workday','Workday'],['lever.co','Lever'],['greenhouse','Greenhouse'],\n    ['successfactors','SAP SuccessFactors'],['bamboohr','BambooHR'],['recruitee','Recruitee'],\n    ['softgarden','Softgarden'],['icims','iCIMS'],['taleo','Oracle Taleo'],\n    ['broadbean','Broadbean'],['workwise','Workwise'],['linkedin','LinkedIn'],\n    ['stepstone','StepStone'],['indeed','Indeed'],['xing.com','Xing'],['join.com','JOIN']\n  ];\n  for (const [k,v] of MAP) { if (f.includes(k)) return v; }\n  return 'Direct';\n}\n\nfunction cleanCompany(name) {\n  if (!name) return null;\n  const n = name.trim();\n  if (PLATFORM_DOMAINS.some(p => n.toLowerCase().includes(p))) return null;\n  if (['unknown','not specified','n/a','none',''].includes(n.toLowerCase())) return null;\n  return n;\n}\n\nfunction domainToCompany(fromStr) {\n  const m = (fromStr || '').match(/@([\\w.-]+)/);\n  if (!m) return null;\n  const domain = m[1].toLowerCase();\n  if (PLATFORM_DOMAINS.some(p => domain.includes(p))) return null;\n  const GENERIC = ['gmail.com','yahoo.com','hotmail.com','outlook.com','web.de','gmx.de','gmx.net'];\n  if (GENERIC.includes(domain)) return null;\n  const name = domain\n    .replace(/\\.(com|de|io|net|org|eu|jobs|at|ch|fr|nl|co\\.uk)$/, '')\n    .replace(/^(mail|email|reply|noreply|no-reply|notification|notifications|info|career|careers|recruiting|hr|jobs|talent|bewerbung|support|team|hello|pimsprod|donotreply)\\./i, '')\n    .replace(/[-_.]/g, ' ').trim();\n  if (name.length < 2) return null;\n  return name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');\n}\n\n// Build result map (Gemini uses 1-based index)\nconst resultMap = {};\nfor (const r of results) {\n  const idx = (r.email_index || 1) - 1;\n  if (idx >= 0 && idx < batchMeta.emailMetas.length) resultMap[idx] = r;\n}\n// Sequential fallback if indices are all wrong\nif (Object.keys(resultMap).length === 0 && results.length > 0) {\n  results.forEach((r,i) => { if (i < batchMeta.emailMetas.length) resultMap[i] = r; });\n}\n\nreturn batchMeta.emailMetas.map((meta, idx) => {\n  const r = resultMap[idx];\n  if (!r) {\n    console.warn(`⚠️ No result for email ${idx+1}: \"${(meta.subject||'').substring(0,50)}\"`);\n    markProcessed(meta.emailId);\n    return makeErrorResult(meta, 'Gemini returned no result for this email');\n  }\n\n  const cls        = JOB_CLASSES.includes(r.classification) ? r.classification : 'not_job_related';\n  const isJob      = JOB_CLASSES.includes(cls);\n  const status     = STATUS_MAP[cls] || '';\n  const platform   = detectPlatform(meta.from, r.platform);\n  const confidence = parseFloat(r.confidence) || 0;\n  const company    = cleanCompany(r.company_name) || domainToCompany(meta.from) || 'Unknown';\n\n  markProcessed(meta.emailId);\n\n  const icon = { application_confirmation:'📝', rejection:'❌', positive_response:'🎉', not_job_related:'⬛' }[cls] || '❓';\n  console.log(`  ${icon} [${idx+1}] ${cls} (${confidence.toFixed(2)}) | ${company} | \"${(meta.subject||'').substring(0,40)}\"`);\n\n  return { json: {\n    spreadsheetId:       meta.spreadsheetId,\n    logSheetId:          String(meta.logSheetId || ''),\n    applicationsSheetId: String(meta.applicationsSheetId || ''),\n    config:              meta.config,\n    is_job_related:      isJob,\n    classification:      cls,\n    company_name:        company,\n    job_title:           (r.job_title || 'Not Specified').trim(),\n    platform,\n    status,\n    confidence,\n    reasoning:           (r.reasoning || '').substring(0, 200),\n    email_subject:       meta.subject,\n    email_from:          meta.from,\n    email_date:          meta.parsedDate,\n    emailId:             meta.emailId,\n    threadId:            meta.threadId\n  } };\n});"
+      },
+      "name": "📊 Expand Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        0
+      ],
+      "id": "expand-results"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 8: CLASSIFICATION FILTER                         ║\n// ║  Routes emails: valid job emails → sheet                 ║\n// ║                 non-job / errors → log only              ║\n// ╚══════════════════════════════════════════════════════════╝\n\nconst d = $input.first().json;\n\n// Type-safe checks\nconst isJobRelated = d.is_job_related === true;\nconst confidence   = parseFloat(d.confidence) || 0;\nconst status       = (d.status || '').trim();\nconst minConf      = parseFloat(d.config?.min_confidence) || 0.55;\n\nconst isValid = isJobRelated && confidence >= minConf && status !== '';\n\nconsole.log(`🔍 Filter: ${d.company_name} | job=${isJobRelated} conf=${confidence.toFixed(2)} status=\"${status}\" → ${isValid ? 'VALID ✅' : 'SKIP ❌'}`);\n\nreturn [{ json: { ...d, _isValidJob: isValid } }];"
+      },
+      "name": "🔍 Classification Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3760,
+        0
+      ],
+      "id": "classification-filter"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json._isValidJob }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Valid Job Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4000,
+        0
+      ],
+      "id": "valid-job-email"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 9: CLASSIFICATION LOGGER                         ║\n// ║  Logs EVERY email classification result (pass or fail)   ║\n// ║  to the Classification Log sheet for debugging.          ║\n// ╚══════════════════════════════════════════════════════════╝\n\nconst d = $input.first().json;\nreturn [{ json: {\n  spreadsheetId: d.spreadsheetId,\n  logSheetId:    d.logSheetId,\n  config:        d.config,\n  _passedFilter: d._isValidJob || false,\n  // Pass through all fields for downstream nodes\n  ...d,\n  // Log row data\n  _logRow: {\n    Timestamp:       new Date().toISOString(),\n    Classification:  d.classification || 'unknown',\n    'Company Name':  (d.company_name || 'Unknown').substring(0, 100),\n    'Job Title':     (d.job_title || 'Not Specified').substring(0, 150),\n    Platform:        d.platform || 'Unknown',\n    Confidence:      d.confidence || 0,\n    Status:          d.status || '',\n    'Email Subject': (d.email_subject || '').substring(0, 150),\n    From:            (d.email_from || '').substring(0, 100),\n    Reasoning:       (d.reasoning || d.error || '').substring(0, 200)\n  }\n} }];"
+      },
+      "name": "📝 Build Log Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4240,
+        160
+      ],
+      "id": "build-log-entry"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Classification Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json._logRow.Timestamp }}",
+            "Classification": "={{ $json._logRow.Classification }}",
+            "Company Name": "={{ $json._logRow['Company Name'] }}",
+            "Job Title": "={{ $json._logRow['Job Title'] }}",
+            "Platform": "={{ $json._logRow.Platform }}",
+            "Confidence": "={{ $json._logRow.Confidence }}",
+            "Status": "={{ $json._logRow.Status }}",
+            "Email Subject": "={{ $json._logRow['Email Subject'] }}",
+            "From": "={{ $json._logRow.From }}",
+            "Reasoning": "={{ $json._logRow.Reasoning }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Classification",
+              "displayName": "Classification",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company Name",
+              "displayName": "Company Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Job Title",
+              "displayName": "Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Platform",
+              "displayName": "Platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Confidence",
+              "displayName": "Confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email Subject",
+              "displayName": "Email Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "From",
+              "displayName": "From",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reasoning",
+              "displayName": "Reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "📋 Write Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4480,
+        160
+      ],
+      "id": "write-log",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json._passedFilter }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Was Valid Job?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4720,
+        160
+      ],
+      "id": "was-valid-job"
+    },
+    {
+      "parameters": {},
+      "name": "🛑 Skip Non-Job",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4960,
+        300
+      ],
+      "id": "skip-non-job"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Applications",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "name": "📖 Read Applications Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4960,
+        100
+      ],
+      "alwaysOutputData": true,
+      "id": "read-applications",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 10: DEDUPLICATION ENGINE                         ║\n// ║  Compares email against existing sheet rows.             ║\n// ║  Uses Thread ID (primary) + fuzzy company match.         ║\n// ║  Status priority: Applied→Positive→Interview→Rejected    ║\n// ║  Rejected can overwrite anything except Offer.           ║\n// ╚══════════════════════════════════════════════════════════╝\n\nconst sheetRows = $('📖 Read Applications Sheet').all()\n  .filter(i => i.json?.['Company Name'] && Object.keys(i.json).length > 1);\n\nconst emailData      = $input.first().json;\nconst spreadsheetId  = emailData.spreadsheetId || '';\nconst today          = emailData.email_date || new Date().toISOString().split('T')[0];\nconst threadId       = emailData.threadId || '';\nconst newStatus      = emailData.status || '';\n\nconsole.log(`🔍 Dedup: \"${emailData.company_name}\" | \"${emailData.job_title}\" | ${newStatus}`);\nconsole.log(`   Sheet rows: ${sheetRows.length} | Thread: ${threadId || 'none'}`);\n\n// Always include spreadsheetId in all returns\nconst makeSkip = (reason) => [{ json: {\n  action: 'skip',\n  spreadsheetId,\n  tabName: 'Applications',\n  reason\n} }];\n\nif (!newStatus)      return makeSkip('No status value');\nif (!spreadsheetId)  return makeSkip('No spreadsheetId');\n\n// ── Normalizers ────────────────────────────────────────────\nfunction normC(s) {\n  return (s||'').toLowerCase()\n    .replace(/\\b(gmbh|ag|inc|ltd|co\\.|corp|se|kg|group|gruppe|holding|services|solutions|technologies|tech|software|germany|deutschland|europe)\\b/gi, '')\n    .replace(/[^\\wäöüß\\s]/gi, '').replace(/\\s+/g, ' ').trim();\n}\nfunction normT(s) {\n  return (s||'').toLowerCase()\n    .replace(/\\(m\\/w\\/d\\)|\\(w\\/m\\/d\\)|\\(f\\/m\\/d\\)|\\(all genders\\)|\\(m\\/f\\/d\\)|\\(\\*\\)/gi, '')\n    .replace(/[^\\wäöüß\\s]/gi, '').replace(/\\s+/g, ' ').trim();\n}\nfunction companySim(a, b) {\n  const na = normC(a), nb = normC(b);\n  if (!na || !nb) return 0;\n  if (na === nb) return 1.0;\n  if (na.includes(nb) || nb.includes(na)) return 0.9;\n  const wa = na.split(' ').filter(w => w.length > 2);\n  const wb = nb.split(' ').filter(w => w.length > 2);\n  if (!wa.length || !wb.length) return 0;\n  return wa.filter(w => wb.some(x => x===w || x.includes(w) || w.includes(x))).length / Math.max(wa.length, wb.length);\n}\nfunction titleSim(a, b) {\n  const na = normT(a), nb = normT(b);\n  if (!na || !nb) return 0;\n  if (na === nb) return 1.0;\n  if (na.includes(nb) || nb.includes(na)) return 0.85;\n  const wa = na.split(' ').filter(w => w.length > 3);\n  const wb = nb.split(' ').filter(w => w.length > 3);\n  if (!wa.length || !wb.length) return 0;\n  return wa.filter(w => wb.includes(w)).length / Math.max(wa.length, wb.length);\n}\n\n// Status priority: higher = more final\n// Rejected=99 so it can overwrite Applied/Positive/Interview but not Offer\nconst PRIORITY = { 'Applied':1, 'Positive Response':2, 'Interview':3, 'Offer':100, 'Rejected':99 };\n\n// ── Step 1: Thread ID Match ────────────────────────────────\nlet bestMatch = null;\nif (threadId) {\n  for (const rowItem of sheetRows) {\n    const row = rowItem.json;\n    if ((row['Thread ID'] || '') !== threadId) continue;\n    // Validate: titles shouldn't be completely different\n    const et = normT(row['Job Title'] || '');\n    const nt = normT(emailData.job_title || '');\n    const bothSpecific = et && nt && et !== 'not specified' && nt !== 'not specified';\n    if (bothSpecific && titleSim(et, nt) < 0.25) {\n      console.log(`   ⚠️ Thread match rejected (title mismatch): \"${row['Job Title']}\" vs \"${emailData.job_title}\"`);\n      continue;\n    }\n    bestMatch = row;\n    console.log(`   🔗 Thread match: ${row['Company Name']} | ${row['Status']}`);\n    break;\n  }\n}\n\n// ── Step 2: Fuzzy Company+Title Match ─────────────────────\nif (!bestMatch) {\n  let bestScore = 0;\n  for (const rowItem of sheetRows) {\n    const row = rowItem.json;\n    const cs = companySim(emailData.company_name, row['Company Name'] || '');\n    if (cs < 0.5) continue;\n    const nt = emailData.job_title, et = row['Job Title'] || '';\n    let score = cs;\n    if (nt && nt !== 'Not Specified' && et && et !== 'Not Specified') {\n      const ts = titleSim(nt, et);\n      score = (ts < 0.2 && cs < 0.95) ? 0 : (cs * 0.4 + ts * 0.6);\n    } else {\n      score = cs * 0.75;\n    }\n    if (score > bestScore && score >= 0.4) { bestScore = score; bestMatch = row; }\n  }\n  if (bestMatch) console.log(`   🔍 Fuzzy match: ${bestMatch['Company Name']} (score: ${bestScore.toFixed(2)})`);\n}\n\n// ── Step 3: Decide ─────────────────────────────────────────\nif (bestMatch) {\n  const curStatus = bestMatch['Status'] || 'Applied';\n  if (curStatus === newStatus) {\n    console.log(`   ⏭️ Skip: Already \"${curStatus}\"`);\n    return makeSkip(`Already ${curStatus}`);\n  }\n\n  const cp = PRIORITY[curStatus] || 0;\n  const np = PRIORITY[newStatus] || 0;\n  // Upgrade if: new status has higher priority, OR it's a rejection (can overwrite most things)\n  const shouldUpgrade = (np > cp) || (newStatus === 'Rejected' && curStatus !== 'Offer');\n\n  if (shouldUpgrade) {\n    const updatedTitle = (bestMatch['Job Title'] === 'Not Specified' && emailData.job_title !== 'Not Specified')\n      ? emailData.job_title\n      : bestMatch['Job Title'];\n    console.log(`   ⬆️ Upgrade: \"${curStatus}\" → \"${newStatus}\"`);\n    return [{ json: {\n      action:          'update',\n      spreadsheetId,\n      tabName:         'Applications',\n      'Company Name':  bestMatch['Company Name'],\n      'Job Title':     updatedTitle,\n      'Status':        newStatus,\n      'Last Updated':  today,\n      '_matchThreadId': bestMatch['Thread ID'] || '',\n      'Processed At':  new Date().toISOString(),\n      'Notes':         `${curStatus} → ${newStatus} | ${(emailData.email_subject||'').substring(0,100)}`\n    } }];\n  }\n\n  console.log(`   🛡️ Protected: \"${curStatus}\" > \"${newStatus}\"`);\n  return makeSkip(`Status protected: ${curStatus} supersedes ${newStatus}`);\n}\n\n// ── New Entry ──────────────────────────────────────────────\nconsole.log(`   ✨ New application: ${emailData.company_name}`);\nreturn [{ json: {\n  action:          'add',\n  spreadsheetId,\n  tabName:         'Applications',\n  'Date Applied':  today,\n  'Company Name':  emailData.company_name,\n  'Job Title':     emailData.job_title,\n  'Platform':      emailData.platform,\n  'Status':        newStatus,\n  'Email Subject': (emailData.email_subject || '').substring(0, 150),\n  'Email From':    emailData.email_from,\n  'Last Updated':  today,\n  'Notes':         (emailData.reasoning || '').substring(0, 150),\n  'Thread ID':     threadId,\n  'Processed At':  new Date().toISOString()\n} }];"
+      },
+      "name": "🔄 Dedup Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5200,
+        100
+      ],
+      "id": "dedup-engine"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "add",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "leftValue": "={{ $json.spreadsheetId }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Add New"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "leftValue": "={{ $json.spreadsheetId }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Update Existing"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "name": "➕ Route: Add or Update",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        5440,
+        100
+      ],
+      "id": "route-add-update"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Applications",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date Applied": "={{ $json['Date Applied'] }}",
+            "Company Name": "={{ $json['Company Name'] }}",
+            "Job Title": "={{ $json['Job Title'] }}",
+            "Platform": "={{ $json['Platform'] }}",
+            "Status": "={{ $json['Status'] }}",
+            "Email Subject": "={{ $json['Email Subject'] }}",
+            "Email From": "={{ $json['Email From'] }}",
+            "Last Updated": "={{ $json['Last Updated'] }}",
+            "Notes": "={{ $json['Notes'] }}",
+            "Thread ID": "={{ $json['Thread ID'] }}",
+            "Processed At": "={{ $json['Processed At'] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date Applied",
+              "displayName": "Date Applied",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company Name",
+              "displayName": "Company Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Job Title",
+              "displayName": "Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Platform",
+              "displayName": "Platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email Subject",
+              "displayName": "Email Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email From",
+              "displayName": "Email From",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last Updated",
+              "displayName": "Last Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Thread ID",
+              "displayName": "Thread ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Processed At",
+              "displayName": "Processed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "➕ Add New Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        5680,
+        0
+      ],
+      "id": "add-new-row",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "mode": "id",
+          "value": "={{ $json.spreadsheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Applications",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Thread ID": "={{ $json['_matchThreadId'] }}",
+            "Job Title": "={{ $json['Job Title'] }}",
+            "Status": "={{ $json['Status'] }}",
+            "Last Updated": "={{ $json['Last Updated'] }}",
+            "Notes": "={{ $json['Notes'] }}",
+            "Processed At": "={{ $json['Processed At'] }}"
+          },
+          "matchingColumns": [
+            "Thread ID"
+          ],
+          "schema": [
+            {
+              "id": "Thread ID",
+              "displayName": "Thread ID",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Job Title",
+              "displayName": "Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last Updated",
+              "displayName": "Last Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Processed At",
+              "displayName": "Processed At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "✏️ Update Existing Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        5680,
+        160
+      ],
+      "id": "update-existing-row",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sFSnoz7rjo7yVYuY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "name": "⏭️ Skip Duplicate",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        5680,
+        320
+      ],
+      "id": "skip-duplicate"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ╔══════════════════════════════════════════════════════════╗\n// ║  MODULE 11: TELEGRAM NOTIFIER                            ║\n// ║  Sends notifications when enabled in config.             ║\n// ║  Set telegram_enabled: true in CONFIG node to activate.  ║\n// ╚══════════════════════════════════════════════════════════╝\n\nconst d = $input.first().json;\nconst cfg = d.config || {};\n\nif (cfg.telegram_enabled !== true) {\n  return [$input.first()]; // Pass through silently\n}\n\nconst token  = cfg.telegram_bot_token || '';\nconst chatId = cfg.telegram_chat_id || '';\nif (!token || !chatId || token === '' || chatId === '') {\n  console.log('⚠️ Telegram enabled but credentials missing');\n  return [$input.first()];\n}\n\nconst EMOJI = { Applied:'📝', Rejected:'❌', 'Positive Response':'🎉', Interview:'🤝', Offer:'🏆' };\nconst isNew = d._isNewEntry !== false;\nconst emoji = EMOJI[d['Status']] || '📌';\n\nconst text = isNew\n  ? [\n      `${emoji} *New Application Tracked*`,\n      `🏢 *Company:* ${d['Company Name']}`,\n      `💼 *Role:* ${d['Job Title']}`,\n      `🔗 *Platform:* ${d['Platform']}`,\n      `📅 *Date:* ${d['Date Applied']}`,\n      `📧 ${(d['Email Subject'] || '').substring(0, 80)}`\n    ].join('\\n')\n  : [\n      `${emoji} *Status Update*`,\n      `🏢 *Company:* ${d['Company Name']}`,\n      `💼 *Role:* ${d['Job Title']}`,\n      `📋 *Update:* ${(d['Notes'] || '').substring(0, 120)}`\n    ].join('\\n');\n\nreturn [{ json: {\n  ...d,\n  _tg_token:      token,\n  _tg_chat_id:    String(chatId),\n  _tg_text:       text,\n  _tg_parse_mode: 'Markdown'\n} }];"
+      },
+      "name": "📱 Build Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5920,
+        80
+      ],
+      "id": "build-notification"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $json._tg_token }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"chat_id\":\"{{ $json._tg_chat_id }}\",\"text\":\"{{ $json._tg_text }}\",\"parse_mode\":\"Markdown\"}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "📱 Send Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6160,
+        80
+      ],
+      "id": "send-telegram",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {},
+      "name": "🔁 Back to Loop",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        6400,
+        80
+      ],
+      "id": "back-to-loop"
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG (Edit Here)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG (Edit Here)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG (Edit Here)": {
+      "main": [
+        [
+          {
+            "node": "🔍 Find Spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 Find Spreadsheet": {
+      "main": [
+        [
+          {
+            "node": "📋 Sheet Resolver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Sheet Resolver": {
+      "main": [
+        [
+          {
+            "node": "Sheet Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet Exists?": {
+      "main": [
+        [
+          {
+            "node": "Get Sheet Tabs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create New Spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Sheet Tabs": {
+      "main": [
+        [
+          {
+            "node": "Extract Existing Tab IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Existing Tab IDs": {
+      "main": [
+        [
+          {
+            "node": "🏗️ Sheet Setup Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create New Spreadsheet": {
+      "main": [
+        [
+          {
+            "node": "Extract New Tab IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract New Tab IDs": {
+      "main": [
+        [
+          {
+            "node": "🏗️ Sheet Setup Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🏗️ Sheet Setup Builder": {
+      "main": [
+        [
+          {
+            "node": "Needs Setup?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Setup?": {
+      "main": [
+        [
+          {
+            "node": "Write App Headers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Log Headers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Dashboard",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Apply Formatting",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔀 Merge Sheet Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write App Headers": {
+      "main": [
+        [
+          {
+            "node": "Setup Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Log Headers": {
+      "main": [
+        [
+          {
+            "node": "Setup Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Setup Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Formatting": {
+      "main": [
+        [
+          {
+            "node": "Setup Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Complete": {
+      "main": [
+        [
+          {
+            "node": "🔀 Merge Sheet Info",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "🔀 Merge Sheet Info": {
+      "main": [
+        [
+          {
+            "node": "Backfill or Trigger?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backfill or Trigger?": {
+      "main": [
+        [
+          {
+            "node": "📧 Build Gmail Queries",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📨 Package Trigger Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📧 Build Gmail Queries": {
+      "main": [
+        [
+          {
+            "node": "📥 Fetch Emails (Per Month)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 Fetch Emails (Per Month)": {
+      "main": [
+        [
+          {
+            "node": "🔄 Deduplicate Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Deduplicate Emails": {
+      "main": [
+        [
+          {
+            "node": "🔀 Merge Email Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📨 Package Trigger Email": {
+      "main": [
+        [
+          {
+            "node": "🔀 Merge Email Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "🔀 Merge Email Sources": {
+      "main": [
+        [
+          {
+            "node": "Any Emails?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Emails?": {
+      "main": [
+        [
+          {
+            "node": "🛑 No Emails Exit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🚫 Pre-Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🚫 Pre-Filter": {
+      "main": [
+        [
+          {
+            "node": "🤖 Build Gemini Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 Build Gemini Batches": {
+      "main": [
+        [
+          {
+            "node": "🔁 Loop Over Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔁 Loop Over Batches": {
+      "main": [
+        [],
+        [
+          {
+            "node": "⏱️ Rate Limit Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏱️ Rate Limit Delay": {
+      "main": [
+        [
+          {
+            "node": "🧠 Gemini API Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 Gemini API Call": {
+      "main": [
+        [
+          {
+            "node": "📊 Expand Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Expand Results": {
+      "main": [
+        [
+          {
+            "node": "🔍 Classification Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 Classification Filter": {
+      "main": [
+        [
+          {
+            "node": "Valid Job Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Job Email?": {
+      "main": [
+        [
+          {
+            "node": "📖 Read Applications Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📝 Build Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📖 Read Applications Sheet": {
+      "main": [
+        [
+          {
+            "node": "🔄 Dedup Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Dedup Engine": {
+      "main": [
+        [
+          {
+            "node": "➕ Route: Add or Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "➕ Route: Add or Update": {
+      "main": [
+        [
+          {
+            "node": "➕ Add New Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "✏️ Update Existing Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⏭️ Skip Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "➕ Add New Row": {
+      "main": [
+        [
+          {
+            "node": "📝 Build Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✏️ Update Existing Row": {
+      "main": [
+        [
+          {
+            "node": "📝 Build Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Build Log Entry": {
+      "main": [
+        [
+          {
+            "node": "📋 Write Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Write Log": {
+      "main": [
+        [
+          {
+            "node": "Was Valid Job?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was Valid Job?": {
+      "main": [
+        [
+          {
+            "node": "📱 Build Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🛑 Skip Non-Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🛑 Skip Non-Job": {
+      "main": [
+        [
+          {
+            "node": "🔁 Loop Over Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📱 Build Notification": {
+      "main": [
+        [
+          {
+            "node": "📱 Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📱 Send Telegram": {
+      "main": [
+        [
+          {
+            "node": "🔁 Back to Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔁 Back to Loop": {
+      "main": [
+        [
+          {
+            "node": "🔁 Loop Over Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏭️ Skip Duplicate": {
+      "main": [
+        [
+          {
+            "node": "🔁 Loop Over Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "id": "AFAEP1jIcenYeLEd",
+  "tags": []
+}

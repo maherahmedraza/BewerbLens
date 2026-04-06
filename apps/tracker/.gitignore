@@ -1,0 +1,23 @@
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables (contain secrets)
+.env
+token.json
+credentials.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

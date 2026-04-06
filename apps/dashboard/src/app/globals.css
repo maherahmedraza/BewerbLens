@@ -1,0 +1,186 @@
+:root {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-sidebar: #ffffff;
+  
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  
+  --border-color: #e2e8f0;
+  --accent-blue: #3b82f6;
+  --accent-blue-soft: #eff6ff;
+  --accent-red: #ef4444;
+  --accent-red-soft: #fef2f2;
+  --accent-green: #22c55e;
+  --accent-green-soft: #f0fdf4;
+  --accent-orange: #f59e0b;
+  --accent-orange-soft: #fffbeb;
+  
+  --radius: 16px;
+  --radius-sm: 8px;
+  --sidebar-width: 260px;
+  --header-height: 72px;
+  
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05);
+
+  --font-sans: var(--font-geist-sans), sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+  
+  /* Modern SaaS Chart Colors */
+  --chart-applied: #6366f1;
+  --chart-applied-light: #818cf8;
+  --chart-rejected: #f43f5e;
+  --chart-rejected-light: #fb7185;
+  --chart-positive: #10b981;
+  --chart-positive-light: #34d399;
+  --chart-interview: #a855f7;
+  --chart-offer: #f59e0b;
+  
+  --chart-grid: #e2e8f0;
+  --chart-axis: #94a3b8;
+}
+
+.dark {
+  --bg-primary: #020617;
+  --bg-secondary: #0f172a;
+  --bg-card: #1e293b;
+  --bg-hover: #334155;
+  --bg-sidebar: #0f172a;
+  
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  
+  --border-color: #1e293b;
+  --accent-blue: #60a5fa;
+  --accent-blue-soft: rgba(96, 165, 250, 0.1);
+  --accent-red: #f87171;
+  --accent-red-soft: rgba(248, 113, 113, 0.1);
+  --accent-green: #4ade80;
+  --accent-green-soft: rgba(74, 222, 128, 0.1);
+  
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.5);
+  
+  --chart-grid: #1e293b;
+  --chart-axis: #475569;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  margin: 0;
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Layout Shell */
+.app-container {
+  display: flex;
+  width: 100%;
+}
+
+.main-content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  transition: margin-left 0.3s ease;
+}
+
+.page-container {
+  padding: 32px;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Typography */
+h1, h2, h3, h4 {
+  margin-top: 0;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.heading {
+  font-size: 28px;
+  margin-bottom: 24px;
+}
+
+/* Common UI Elements */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow);
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
+}
+
+/* Old Nav (to be removed once Sidebar is ready) */
+.nav { display: none; }
+
+.heading {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+}
+
+.subheading {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 600px;
+}
+
+.sectionTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
