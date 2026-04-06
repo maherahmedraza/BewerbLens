@@ -1,6 +1,6 @@
-# AI Email Tracker
+# BewerbLens Tracker
 
-A code-first, production-ready **Job Application Email Tracker** that replaces the 30-node n8n workflow with a clean Python pipeline.
+A code-first, production-ready **BewerbLens Tracker** that replaces the 30-node n8n workflow with a clean Python pipeline.
 
 ## Architecture
 
@@ -25,7 +25,7 @@ Gmail API --> Pre-Filter --> Gemini AI --> Supabase (Postgres) --> Telegram
 ## Project Structure
 
 ```
-ai_email_tracker/
+apps/tracker/
 ├── tracker.py            # Main pipeline orchestrator
 ├── config.py             # Pydantic Settings (env vars)
 ├── models.py             # Data models & enums
@@ -66,7 +66,7 @@ ai_email_tracker/
 ### 4. Install & Run Locally
 
 ```bash
-cd ai_email_tracker
+cd apps/tracker
 cp .env.example .env
 # Edit .env with your actual credentials
 

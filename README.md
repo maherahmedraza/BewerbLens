@@ -29,7 +29,7 @@ BewerbLens solves a universal problem for job seekers: **tracking applications s
 
 | Component | Tech Stack | Purpose |
 |---|---|---|
-| **AI Email Tracker** | Python 3.11+, Pydantic, Gemini AI | Automated email ingestion & classification |
+| **BewerbLens Tracker** | Python 3.11+, Pydantic, Gemini AI | Automated email ingestion & classification |
 | **Dashboard** | Next.js 16, React 19, Recharts, Supabase SSR | Real-time application tracking UI |
 | **n8n Workflow** | n8n (Docker) | Original visual workflow (legacy reference) |
 | **Database** | Supabase (PostgreSQL) | Persistent storage with deduplication |
@@ -39,7 +39,7 @@ BewerbLens solves a universal problem for job seekers: **tracking applications s
 
 ## Features
 
-### AI Email Tracker
+### BewerbLens Tracker
 - **Incremental checkpointing** — only processes new emails since last run
 - **Gemini AI classification** — detects Application, Rejection, Interview, Offer, and Positive Response
 - **Confidence scoring** — configurable threshold to filter uncertain classifications
@@ -99,7 +99,7 @@ BewerbLens/
 
 ### Prerequisites
 
-- **Python 3.11+** (for AI Email Tracker)
+- **Python 3.11+** (for BewerbLens Tracker)
 - **Node.js 18+** (for Dashboard)
 - **Docker & Docker Compose** (for n8n)
 - **Supabase account** (free tier works)
@@ -117,7 +117,7 @@ cp .env.example .env
 1. Create a project at [supabase.com](https://supabase.com)
 2. Run the schema migrations located in `apps/tracker/schema.sql` and `schema_v2.sql`.
 
-### 3. Run AI Email Tracker
+### 3. Run BewerbLens Tracker
 ```bash
 cd apps/tracker
 python -m venv .venv

@@ -93,7 +93,7 @@ def run_loop(interval_hours: float = DEFAULT_INTERVAL_HOURS) -> None:
     cycle = 0
 
     logger.info("=" * 60)
-    logger.info("AI Email Tracker — Scheduler started")
+    logger.info("BewerbLens — Scheduler started")
     logger.bind(
         interval_hours=interval_hours,
         jitter_max_min=MAX_JITTER_MINUTES
@@ -155,7 +155,7 @@ def run_once() -> int:
 def main():
     """Punto de entrada del scheduler con argumentos CLI."""
     parser = argparse.ArgumentParser(
-        description="AI Email Tracker — Scheduler",
+        description="BewerbLens — Scheduler",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos:

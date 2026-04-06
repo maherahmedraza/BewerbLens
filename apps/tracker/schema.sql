@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════════════════════════════╗
--- ║  SQL Schema for Supabase — AI Email Tracker                 ║
+-- ║  SQL Schema for Supabase — BewerbLens                       ║
 -- ║  Run this script in the Supabase SQL Editor.                ║
 -- ║                                                             ║
 -- ║  The UNIQUE constraint on thread_id eliminates the          ║

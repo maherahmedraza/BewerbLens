@@ -1,7 +1,7 @@
 [project]
-name = "ai-email-tracker"
+name = "bewerblens-tracker"
 version = "2.0.0"
-description = "AI-powered Job Application Email Tracker — replaces n8n workflow with a code-first Python pipeline"
+description = "BewerbLens AI Tracker — Orchestrates the job application ingestion pipeline."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
