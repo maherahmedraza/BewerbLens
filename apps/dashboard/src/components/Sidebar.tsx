@@ -26,10 +26,10 @@ export default function Sidebar() {
       <div className={styles.logoContainer}>
         <Link href="/" className={styles.logo}>
           <Image 
-            src="/logo.png" 
+            src="/geometric_logo.png" 
             alt="BewerbLens Logo" 
-            width={200} 
-            height={60} 
+            width={400} 
+            height={400} 
             className={styles.logoImage} 
             priority
           />

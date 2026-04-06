@@ -29,6 +29,17 @@
   letter-spacing: -0.03em;
 }
 
+.logoImage {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  object-position: center 15%;
+  background: white;
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
 .logoIcon {
   font-size: 24px;
 }
