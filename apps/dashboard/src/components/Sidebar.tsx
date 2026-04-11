@@ -8,13 +8,15 @@ import {
   HomeIcon, 
   TableCellsIcon, 
   ChartPieIcon, 
-  Cog6ToothIcon 
+  Cog6ToothIcon,
+  RectangleStackIcon
 } from "@heroicons/react/24/outline";
 
 const NAV_ITEMS = [
   { name: "Dashboard", href: "/", icon: HomeIcon },
   { name: "Applications", href: "/applications", icon: TableCellsIcon },
   { name: "Analytics", href: "/analytics", icon: ChartPieIcon },
+  { name: "Pipeline", href: "/pipeline", icon: RectangleStackIcon },
   { name: "Settings", href: "/settings", icon: Cog6ToothIcon },
 ];
 

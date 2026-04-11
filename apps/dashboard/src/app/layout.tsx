@@ -16,10 +16,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "BewerbLens — Job Application Insights",
-  description: "Track and analyze job applications from Gmail",
-};
+import { Providers } from "../components/Providers";
 
 export default function RootLayout({
   children,
@@ -30,13 +27,15 @@ export default function RootLayout({
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body suppressHydrationWarning>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <div className="app-container">
-            <Sidebar />
-            <div className="main-content">
-              <Header />
-              <main className="page-container">{children}</main>
+          <Providers>
+            <div className="app-container">
+              <Sidebar />
+              <div className="main-content">
+                <Header />
+                <main className="page-container">{children}</main>
+              </div>
             </div>
-          </div>
+          </Providers>
         </ThemeProvider>
       </body>
     </html>

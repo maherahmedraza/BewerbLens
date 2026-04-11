@@ -1,0 +1,38 @@
+# List Network Requests
+
+| reqid | method | url | status |
+|---|---|---|---|
+| 1 | GET | http://localhost:3000/pipeline | success - 200 |
+| 2 | GET | http://localhost:3000/_next/static/media/797e433ab948586e-s.p.0.q-h669a_dqa.woff2 | success - 200 |
+| 3 | GET | http://localhost:3000/_next/static/media/caa3a2e1cccd8315-s.p.16t1db8_9y2o~.woff2 | success - 200 |
+| 4 | GET | http://localhost:3000/_next/image?url=%2Fgeometric_logo.png&w=640&q=75 | failed - 304 |
+| 5 | GET | http://localhost:3000/_next/static/chunks/%5Broot-of-the-server%5D__0kot7~m._.css | failed - 304 |
+| 6 | GET | http://localhost:3000/_next/static/chunks/src_app_pipeline_0vdxc4.._.css | failed - 304 |
+| 7 | GET | http://localhost:3000/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_10z625~._.js | failed - 304 |
+| 8 | GET | http://localhost:3000/_next/static/chunks/node_modules_next_dist_compiled_next-devtools_index_0553esy.js | failed - 304 |
+| 9 | GET | http://localhost:3000/_next/static/chunks/node_modules_next_dist_compiled_react-dom_058-ah~._.js | failed - 304 |
+| 10 | GET | http://localhost:3000/_next/static/chunks/node_modules_next_dist_compiled_react-server-dom-turbopack_0p3wegg._.js | failed - 304 |
+| 11 | GET | http://localhost:3000/_next/static/chunks/node_modules_next_dist_compiled_0rpq4pf._.js | failed - 304 |
+| 12 | GET | http://localhost:3000/_next/static/chunks/node_modules_next_dist_client_0fhqo1d._.js | failed - 304 |
+| 13 | GET | http://localhost:3000/_next/static/chunks/node_modules_next_dist_115brz8._.js | failed - 304 |
+| 14 | GET | http://localhost:3000/_next/static/chunks/node_modules_%40swc_helpers_cjs_0-4ujiy._.js | failed - 304 |
+| 15 | GET | http://localhost:3000/_next/static/chunks/_0rqeker._.js | failed - 304 |
+| 16 | GET | http://localhost:3000/_next/static/chunks/turbopack-_0p44nws._.js | failed - 304 |
+| 17 | GET | http://localhost:3000/_next/static/chunks/node_modules_0dv6vgp._.js | failed - 304 |
+| 18 | GET | http://localhost:3000/_next/static/chunks/src_components_05m3zb0._.js | failed - 304 |
+| 19 | GET | http://localhost:3000/_next/static/chunks/src_app_layout_tsx_004glpo._.js | failed - 304 |
+| 20 | GET | http://localhost:3000/_next/static/chunks/src_02cihql._.js | failed - 304 |
+| 21 | GET | http://localhost:3000/_next/static/chunks/node_modules_%40supabase_auth-js_dist_module_0.pzobh._.js | failed - 304 |
+| 22 | GET | http://localhost:3000/_next/static/chunks/node_modules_axios_lib_0qhimsy._.js | failed - 304 |
+| 23 | GET | http://localhost:3000/_next/static/chunks/node_modules_0f5oso7._.js | failed - 304 |
+| 24 | GET | http://localhost:3000/_next/static/chunks/src_app_pipeline_page_tsx_0_tmbfb._.js | failed - 304 |
+| 25 | GET | http://localhost:3000/_next/static/chunks/node_modules_next_dist_client_components_builtin_global-error_0_tmbfb.js | failed - 304 |
+| 26 | GET | http://localhost:3000/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_0yjw1oe._.js | failed - 304 |
+| 27 | GET | http://localhost:3000/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_10mygs7._.js | failed - 304 |
+| 28 | GET | http://localhost:3000/__nextjs_font/geist-latin.woff2 | success - 200 |
+| 29 | GET | http://localhost:3000/__nextjs_font/geist-mono-latin.woff2 | success - 200 |
+| 30 | GET | http://localhost:8000/config/ | success - 200 |
+| 31 | GET | http://localhost:8000/runs/history?limit=1 | success - 200 |
+| 32 | POST | http://localhost:8000/runs/trigger | success - 200 |
+| 33 | GET | http://localhost:8000/runs/history?limit=1 | success - 200 |
+| 34 | GET | http://localhost:8000/config/ | success - 200 |

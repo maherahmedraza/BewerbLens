@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
+import { config } from "dotenv";
+import { resolve } from "path";
+
+// Carga las variables NEXT_PUBLIC_* desde el .env raíz del monorepo
+config({ path: resolve(__dirname, "../../.env") });
 
 const nextConfig: NextConfig = {
-  /* config options here */
   async headers() {
     return [
       {

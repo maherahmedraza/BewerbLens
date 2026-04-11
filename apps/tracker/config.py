@@ -16,7 +16,10 @@ class Settings(BaseSettings):
     # ── Gmail ──────────────────────────────────────────────
     gmail_credentials_path: str = Field(default="credentials.json")
     gmail_token_path: str = Field(default="token.json")
-    user_email: str = Field(default="maherahmedraza1@gmail.com")
+    # JSON strings para autenticación sin archivos locales
+    gmail_credentials_json: str | None = Field(default=None)
+    gmail_token_json: str | None = Field(default=None)
+    user_email: str = Field(default="")
 
     # ── Gemini AI ──────────────────────────────────────────
     gemini_api_key: str = Field(default="")
@@ -36,10 +39,15 @@ class Settings(BaseSettings):
     min_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
     backfill_start_date: str = Field(default="2025-10-01")
 
+    # ── Scheduler ─────────────────────────────────────────
+    scheduler_enabled: bool = Field(default=True)
+    schedule_interval_hours: float = Field(default=4.0, ge=0.1)
+
     model_config = {
-        "env_file": ".env",
+        "env_file": "../../.env",
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
+        "extra": "ignore",
     }
 
 

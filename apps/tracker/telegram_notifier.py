@@ -1,15 +1,22 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  Telegram Notifier — Status notifications                   ║
-# ║  Replaces the "Build Notification" and                      ║
-# ║  "Send Telegram" nodes from the n8n workflow.               ║
+# ║                                                             ║
+# ║  Fixes applied:                                             ║
+# ║  #12 — datetime.utcnow() replaced with timezone-aware now() ║
+# ║  #15 — Markdown special chars escaped to prevent breakage   ║
+# ║  #16 — action param is now NotificationAction enum          ║
 # ╚══════════════════════════════════════════════════════════════╝
+
+import re
+from datetime import datetime, timezone
 
 import requests
 from loguru import logger
+from tenacity import retry, stop_after_attempt, wait_fixed
 
 from config import settings
+from models import NotificationAction
 
-# Emojis per status, same as in the n8n workflow
 STATUS_EMOJI: dict[str, str] = {
     "Applied": "📝",
     "Rejected": "❌",
@@ -18,53 +25,100 @@ STATUS_EMOJI: dict[str, str] = {
     "Offer": "🏆",
 }
 
+# Telegram Markdown v1 special characters that break message rendering
+_MD_SPECIAL = re.compile(r"([*_`\[\]])")
+
+
+def _escape_md(text: str) -> str:
+    """
+    Escapes Telegram Markdown v1 special characters in user-sourced strings.
+    Fixes: review issue #15 — Markdown injection from company names / job titles.
+
+    Example: "Acme *Corp*" → "Acme \*Corp\*"
+    """
+    if not text:
+        return ""
+    return _MD_SPECIAL.sub(r"\\\1", str(text))
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(2),
+    reraise=False,  # notification failure must never crash the pipeline
+)
+def _post_to_telegram(url: str, payload: dict) -> None:
+    """
+    Sends a single HTTP request to the Telegram Bot API.
+    Retried up to 3 times with 2s wait between attempts.
+    reraise=False: if all attempts fail we log and move on.
+    """
+    response = requests.post(url, json=payload, timeout=10)
+    response.raise_for_status()
+
 
 def send_notification(
-    action: str,
+    action: NotificationAction,
     company_name: str,
-    job_title: str,
-    platform: str,
-    status: str,
+    job_title: str = "Not Specified",
+    platform: str = "Direct",
+    status: str = "Applied",
     email_subject: str = "",
     notes: str = "",
     date_applied: str = "",
 ) -> bool:
     """
     Sends a notification via Telegram.
-    Only runs if telegram_enabled is True in the configuration.
+    Only runs if telegram_enabled=True in config.
 
-    Returns True if sent successfully, False if error or disabled.
+    action: NotificationAction enum (ADDED | UPDATED | ERROR).
+    Returns True if sent successfully, False if disabled or failed.
     """
     if not settings.telegram_enabled:
         return False
 
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
-        logger.warning("Telegram enabled but credentials are missing")
+        logger.warning("Telegram enabled but bot_token or chat_id is missing")
         return False
 
     emoji = STATUS_EMOJI.get(status, "📌")
 
-    # Build message based on whether it is a new application or update
-    if action == "added":
+    # Escape all user-sourced strings before embedding in Markdown
+    safe_company = _escape_md(company_name)
+    safe_title = _escape_md(job_title)
+    safe_platform = _escape_md(platform)
+    safe_subject = _escape_md(email_subject[:80])
+    safe_notes = _escape_md(notes[:120])
+    safe_date = _escape_md(date_applied)
+
+    if action == NotificationAction.ADDED:
         text = (
             f"{emoji} *New Application Tracked*\n"
-            f"🏢 *Company:* {company_name}\n"
-            f"💼 *Role:* {job_title}\n"
-            f"🔗 *Platform:* {platform}\n"
-            f"📅 *Date:* {date_applied}\n"
-            f"📧 {email_subject[:80]}"
+            f"🏢 *Company:* {safe_company}\n"
+            f"💼 *Role:* {safe_title}\n"
+            f"🔗 *Platform:* {safe_platform}\n"
+            f"📅 *Date:* {safe_date}\n"
+            f"📧 {safe_subject}"
         )
-    elif action == "updated":
+    elif action == NotificationAction.UPDATED:
         text = (
             f"{emoji} *Status Update*\n"
-            f"🏢 *Company:* {company_name}\n"
-            f"💼 *Role:* {job_title}\n"
-            f"📋 *Update:* {notes[:120]}"
+            f"🏢 *Company:* {safe_company}\n"
+            f"💼 *Role:* {safe_title}\n"
+            f"📋 *Update:* {safe_notes}"
+        )
+    elif action == NotificationAction.ERROR:
+        # Dedicated error template — fixes the misleading crash notification
+        # from scheduler.py (review issue — scheduler passed action="added" for errors)
+        text = (
+            f"⚠️ *Pipeline Error*\n"
+            f"📛 *Error:* {safe_company}\n"
+            f"🔍 *Detail:* {safe_title}\n"
+            f"🕐 *Time:* {_escape_md(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))}"
         )
     else:
+        logger.warning(f"Unknown notification action: {action}")
         return False
 
-    # Send via Telegram Bot API
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
     payload = {
         "chat_id": settings.telegram_chat_id,
@@ -73,10 +127,10 @@ def send_notification(
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
+        _post_to_telegram(url, payload)
         logger.bind(company=company_name, action=action).info("Telegram notification sent")
         return True
-    except requests.RequestException as error:
-        logger.bind(error=str(error)).error("Telegram notification failed")
+    except Exception as error:
+        # All retries exhausted — log and continue, never crash pipeline
+        logger.bind(error=str(error)).error("Telegram notification failed after 3 attempts")
         return False

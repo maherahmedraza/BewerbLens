@@ -1,0 +1,151 @@
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  padding: 2rem;
+  box-shadow: var(--shadow);
+}
+
+.statusHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2.5rem;
+}
+
+.indicatorContainer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.pulse {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.pulse.active {
+  background: var(--green-500);
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  animation: pulse-animation 2s infinite;
+}
+
+@keyframes pulse-animation {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+.statusText {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 1.125rem;
+}
+
+.syncButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.syncButton:hover:not(:disabled) {
+  background: var(--accent-blue);
+  filter: brightness(0.9);
+  transform: translateY(-1px);
+}
+
+.syncButton:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.spinIcon {
+  width: 1.25rem;
+  height: 1.25rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.stagesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.stage {
+  padding: 1.25rem;
+  border-radius: 1rem;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  transition: all 0.3s;
+  border: 1px solid var(--border-color);
+}
+
+.stage.active {
+  background: var(--accent-blue-soft);
+  border: 1px solid var(--accent-blue);
+}
+
+.stage.success {
+  background: var(--accent-green-soft);
+  border: 1px solid var(--accent-green);
+}
+
+.check {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--accent-green);
+}
+
+.spin {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--accent-blue);
+  animation: spin 3s linear infinite;
+}
+
+.dot {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+  margin: 0.25rem;
+}
+
+.stageTitle {
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+  color: var(--text-primary);
+}
+
+.stageDesc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}

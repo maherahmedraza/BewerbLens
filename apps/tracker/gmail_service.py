@@ -8,6 +8,7 @@
 # ║  v2.0: Uses BatchHttpRequest for 5x faster fetching.        ║
 # ╚══════════════════════════════════════════════════════════════╝
 
+import json
 import base64
 import re
 from collections.abc import Callable
@@ -51,39 +52,70 @@ JOB_KEYWORDS = [
     '"ihre bewerbung"', '"deine bewerbung"',
 ]
 
-
 def _authenticate() -> Credentials:
     """
     Authenticates with Google OAuth2.
-    Locally: opens the browser to get the token.
-    In CI/CD (GitHub Actions): uses GMAIL_CREDENTIALS_JSON from environment.
+    Prioritizes JSON strings from environment variables (Settings),
+    falling back to local files if necessary.
     """
     creds = None
-    token_path = Path(settings.gmail_token_path)
-    creds_path = Path(settings.gmail_credentials_path)
+    
+    # 1. Try to load token from environment variable (JSON string)
+    if settings.gmail_token_json:
+        logger.info("Loading Gmail token from environment variable")
+        try:
+            token_info = json.loads(settings.gmail_token_json)
+            creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+        except Exception as e:
+            logger.error(f"Failed to load GMAIL_TOKEN_JSON: {e}")
 
-    # Try to load existing token
-    if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+    # 2. Fallback to local token file
+    if not creds:
+        token_path = Path(settings.gmail_token_path)
+        if token_path.exists():
+            logger.info(f"Loading Gmail token from {token_path}")
+            creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
 
-    # If no valid token, generate a new one
+    # 3. If no valid token, refresh or generate a new one
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             logger.info("Refreshing expired Gmail token")
             creds.refresh(Request())
         else:
-            if not creds_path.exists():
-                raise FileNotFoundError(
-                    f"Could not find {creds_path}. "
-                    "Download credentials.json from Google Cloud Console -> APIs & Services -> Credentials."
-                )
+            # Load Client Secrets
+            client_config = None
+            if settings.gmail_credentials_json:
+                logger.info("Loading client secrets from environment variable")
+                try:
+                    client_config = json.loads(settings.gmail_credentials_json)
+                except Exception as e:
+                    logger.error(f"Failed to parse GMAIL_CREDENTIALS_JSON: {e}")
+            
+            if not client_config:
+                creds_path = Path(settings.gmail_credentials_path)
+                if not creds_path.exists():
+                    raise FileNotFoundError(
+                        f"Could not find credentials in environment or at {creds_path}. "
+                        "Download credentials.json from Google Cloud Console."
+                    )
+                logger.info(f"Loading client secrets from {creds_path}")
+                with open(creds_path) as f:
+                    client_config = json.load(f)
+
             logger.info("Starting OAuth flow for Gmail")
-            flow = InstalledAppFlow.from_client_secrets_file(str(creds_path), SCOPES)
+            flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
             creds = flow.run_local_server(port=8080, open_browser=False)
 
-        # Save token for future runs
-        token_path.write_text(creds.to_json())
-        logger.info("Gmail token saved")
+        # 4. Handle token persistence
+        # We don't write to file if we are using environment-based secrets
+        new_token_json = creds.to_json()
+        if settings.gmail_token_json:
+            logger.warning("Gmail token was refreshed/generated. PLEASE UPDATE YOUR GMAIL_TOKEN_JSON ENV VAR WITH:")
+            logger.info(new_token_json)
+        else:
+            token_path = Path(settings.gmail_token_path)
+            token_path.write_text(new_token_json)
+            logger.info(f"Gmail token saved to {token_path}")
 
     return creds
 
@@ -202,17 +234,25 @@ def _batch_callback(request_id: str, response: Any, error: Exception) -> None:
     pass
 
 
-def fetch_emails(after_date: date) -> list[EmailMetadata]:
+def get_gmail_service():
+    """Returns a Gmail API service instance."""
+    try:
+        creds = _authenticate()
+        return build("gmail", "v1", credentials=creds)
+    except Exception as e:
+        logger.error(f"Failed to build Gmail service: {e}")
+        return None
+
+
+def fetch_emails(service: Any, since_date: date) -> list[EmailMetadata]:
     """
     Fetches emails from Gmail since a specific date.
     Returns a list of EmailMetadata with extracted data.
 
     v2.0: Uses BatchHttpRequest to fetch 50 messages per HTTP request
-    instead of sequential calls. Reduces 638 calls to ~13 batches.
+    instead of sequential calls.
     """
-    creds = _authenticate()
-    service = build("gmail", "v1", credentials=creds)
-    query = _build_query(after_date)
+    query = _build_query(since_date)
 
     # Get list of message IDs (automatic pagination)
     all_message_ids: list[str] = []
@@ -242,7 +282,6 @@ def fetch_emails(after_date: date) -> list[EmailMetadata]:
     # Instead of N sequential calls, we batch them into groups of 50.
     # Each batch is a single HTTP request with multiple sub-requests.
     emails: list[EmailMetadata] = []
-    errors = 0
 
     def _make_batch_callback(results_list: list, email_id: str) -> Callable:
         """Creates a closure to collect batch results."""
@@ -280,6 +319,6 @@ def fetch_emails(after_date: date) -> list[EmailMetadata]:
 
     logger.info(
         f"Successfully extracted {len(emails)} emails with full metadata "
-        f"({errors} errors, {batch_num} batches)"
+        f"({batch_num} batches)"
     )
     return emails

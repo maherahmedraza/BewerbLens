@@ -1,0 +1,152 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  Worker — Task execution logic                              ║
+# ║                                                             ║
+# ║  Fixes applied:                                             ║
+# ║  #D  — task_type check: "sync" instead of "tracker"         ║
+# ║  #L  — Only use columns that exist in pipeline_tasks schema ║
+# ║  #M  — Status "done"/"failed" to match schema constraint    ║
+# ║  #7  — Atomic task claiming via 'claim_next_task' SQL RPC   ║
+# ║  #14 — Heartbeat on pipeline_runs (not pipeline_tasks)      ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+import threading
+import time
+from datetime import datetime, timezone
+
+from loguru import logger
+
+from .supabase_client import supabase
+from .tracker import run_tracker_task
+
+
+def worker_loop(worker_id: str):
+    """
+    Bucle continuo: reclama y ejecuta tareas de la cola pipeline_tasks.
+    """
+    logger.info(f"Worker {worker_id} started.")
+
+    while True:
+        try:
+            # Reclama la siguiente tarea pendiente de forma atómica (Fix #7)
+            res = supabase.rpc("claim_next_task", {"worker_val": worker_id}).execute()
+
+            if not res.data:
+                time.sleep(10)
+                continue
+
+            task = res.data[0]
+            task_id = task["id"]
+            run_id = task.get("run_id")
+
+            logger.info(f"Worker {worker_id} claimed task {task_id}")
+
+            # Marcar como "running" para visibilidad en el dashboard
+            _update_task_status(task_id, "running")
+
+            # Heartbeat en pipeline_runs (no en pipeline_tasks que no tiene esa columna)
+            stop_heartbeat = threading.Event()
+            if run_id:
+                hb_thread = threading.Thread(
+                    target=_heartbeat_loop,
+                    args=(run_id, stop_heartbeat),
+                    daemon=True,
+                )
+                hb_thread.start()
+            else:
+                hb_thread = None
+
+            started_at = datetime.now(timezone.utc)
+
+            try:
+                success, result_stats = _execute_task(task)
+
+                # Calcular duración
+                ended_at = datetime.now(timezone.utc)
+                duration_ms = int((ended_at - started_at).total_seconds() * 1000)
+
+                # Fix #M: "done"/"failed" — no "completed"
+                status = "done" if success else "failed"
+                _update_task_status(task_id, status)
+
+                # Actualizar también pipeline_runs si hay run_id asociado
+                if run_id:
+                    _finalize_run(run_id, status, result_stats, started_at, ended_at, duration_ms)
+
+                logger.info(f"Task {task_id} {status} in {duration_ms}ms")
+
+            finally:
+                stop_heartbeat.set()
+                if hb_thread:
+                    hb_thread.join(timeout=2)
+
+        except Exception as e:
+            logger.error(f"Worker loop error: {str(e)}")
+            time.sleep(5)
+
+
+def _update_task_status(task_id: str, status: str):
+    """Actualiza el status de una tarea en pipeline_tasks."""
+    try:
+        supabase.table("pipeline_tasks").update({
+            "status": status,
+        }).eq("id", task_id).execute()
+    except Exception as e:
+        logger.warning(f"Failed to update task {task_id} status: {e}")
+
+
+def _finalize_run(
+    run_id: str,
+    status: str,
+    result_stats: dict,
+    started_at: datetime,
+    ended_at: datetime,
+    duration_ms: int,
+):
+    """Finaliza el registro en pipeline_runs con estadísticas y duración."""
+    try:
+        run_status = "success" if status == "done" else "failed"
+        data = {
+            "status": run_status,
+            "ended_at": ended_at.isoformat(),
+            "duration_ms": duration_ms,
+            "summary_stats": result_stats or {},
+        }
+        if status == "failed" and result_stats.get("error"):
+            data["error_message"] = str(result_stats["error"])[:500]
+
+        supabase.table("pipeline_runs").update(data).eq("id", run_id).execute()
+    except Exception as e:
+        logger.warning(f"Failed to finalize run {run_id}: {e}")
+
+
+def _heartbeat_loop(run_id: str, stop_event: threading.Event):
+    """
+    Actualiza heartbeat_at en pipeline_runs cada 30s.
+    Fix #14: heartbeat en la tabla correcta (pipeline_runs, no pipeline_tasks).
+    """
+    while not stop_event.is_set():
+        try:
+            supabase.table("pipeline_runs").update({
+                "heartbeat_at": datetime.now(timezone.utc).isoformat()
+            }).eq("id", run_id).execute()
+        except Exception:
+            pass
+        stop_event.wait(timeout=30)
+
+
+def _execute_task(task: dict) -> tuple[bool, dict]:
+    """Enruta al runner correcto según task_type."""
+    task_type = task.get("task_type")
+
+    try:
+        # Fix #D: el task_type insertado es "sync", no "tracker"
+        if task_type == "sync":
+            payload = task.get("parameters", {})
+            stats = run_tracker_task(payload)
+            return True, stats
+        else:
+            logger.error(f"Unknown task type: {task_type}")
+            return False, {"error": f"unknown_task_type: {task_type}"}
+    except Exception as e:
+        logger.error(f"Execution error: {str(e)}")
+        return False, {"error": str(e)}

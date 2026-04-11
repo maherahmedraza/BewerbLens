@@ -1,0 +1,127 @@
+.tableWrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 600px;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-blue) transparent;
+}
+
+.tableWrapper::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.tableWrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tableWrapper::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
+}
+
+.tableWrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-blue);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table th {
+  padding: 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+  z-index: 10;
+}
+
+.table td {
+  padding: 1.25rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.runId {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badge.success {
+  background: var(--accent-green-soft);
+  color: var(--accent-green);
+}
+
+.badge.failed {
+  background: var(--accent-red-soft);
+  color: var(--accent-red);
+}
+
+.badgeIcon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.triggerType {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  text-transform: capitalize;
+}
+
+.time, .duration {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.stats {
+  display: flex;
+  gap: 0.75rem;
+  font-weight: 600;
+}
+
+.added { color: var(--accent-green); }
+.updated { color: var(--accent-blue); }
+.error { color: var(--accent-red); font-size: 0.8125rem; font-weight: 500; }
+
+.viewLogs {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  transition: all 0.2s;
+}
+
+.viewLogs:hover {
+  background: var(--bg-hover);
+  color: var(--accent-blue);
+}
+
+.infoIcon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
