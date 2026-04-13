@@ -1,3 +1,5 @@
+import os
+os.environ["GEMINI_API_KEY"] = "dummy_for_tests"
 from gemini_classifier import GeminiClassifier
 
 def test_parse_gemini_response_valid():

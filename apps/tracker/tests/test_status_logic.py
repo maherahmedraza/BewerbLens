@@ -10,8 +10,8 @@ def test_status_precedence():
     # rejection -> applied (NO)
     assert _should_update_status("Rejected", "Applied") is False
     
-    # rejection -> positive response (YES - maybe a mistake before or new update)
-    assert _should_update_status("Rejected", "Positive Response") is True
+    # rejection -> positive response (NO - Fix B removed the dead branch)
+    assert _should_update_status("Rejected", "Positive Response") is False
     
     # interview -> rejection (YES)
     assert _should_update_status("Interview", "Rejected") is True

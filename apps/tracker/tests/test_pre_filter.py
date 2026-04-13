@@ -2,6 +2,8 @@ import pytest
 from models import EmailMetadata
 from pre_filter import apply_pre_filters
 
+from datetime import date
+
 def test_pre_filter_blocked_senders():
     """Verify that emails from specifically blocked senders are filtered."""
     emails = [
@@ -9,13 +11,13 @@ def test_pre_filter_blocked_senders():
             email_id="1", thread_id="t1", 
             sender="no-reply@linkedin.com", # Should be filtered out if job alert
             subject="New Job Alert",
-            body="...", date="2026-04-11T10:00:00Z"
+            body="...", date=date(2026, 4, 11)
         ),
         EmailMetadata(
             email_id="2", thread_id="t2",
             sender="recruiter@company.com",
             subject="Interview Invitation",
-            body="...", date="2026-04-11T10:00:00Z"
+            body="...", date=date(2026, 4, 11)
         )
     ]
     
@@ -31,7 +33,7 @@ def test_pre_filter_self_sent():
             email_id="3", thread_id="t3",
             sender="maherahmedraza1@gmail.com", # Self-sent
             subject="Draft for application",
-            body="...", date="2026-04-11T10:00:00Z"
+            body="...", date=date(2026, 4, 11)
         )
     ]
     
@@ -46,7 +48,7 @@ def test_pre_filter_subjects():
             email_id="4", thread_id="t4",
             sender="alerts@indeed.com",
             subject="10 new jobs for you", # Marketing/Alert
-            body="...", date="2026-04-11T10:00:00Z"
+            body="...", date=date(2026, 4, 11)
         )
     ]
     
