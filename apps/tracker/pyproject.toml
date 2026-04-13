@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Maher", email = "maherahmedraza1@gmail.com" }]
 
 dependencies = [
-    "google-api-python-client>=2.130.0",
+    "google-api-python-client>=2.194.0",
     "google-auth-httplib2>=0.2.0",
     "google-auth-oauthlib>=1.2.0",
     "google-genai>=1.0.0",
