@@ -16,15 +16,18 @@ from pre_filter import apply_pre_filters
 from supabase_service import (
     get_client,
     get_existing_email_ids,
+    get_unprocessed_emails,
     insert_pipeline_log,
     insert_raw_email,
     mark_raw_emails_processed,
     update_heartbeat,
-    update_pipeline_step,
-    upsert_application,
 )
 from telegram_notifier import send_notification
 from models import NotificationAction
+
+from pipeline_logger import PipelineLogger, StepTimer
+from failure_handler import RetryConfig, with_retry, StepExecutor, HeartbeatMonitor
+from fuzzy_matcher import ApplicationMatcher, create_or_update_application
 
 
 def run_pipeline(
@@ -38,99 +41,144 @@ def run_pipeline(
     client = get_client()
     stats = {"added": 0, "updated": 0, "skipped": 0, "errors": 0}
     step_run_id = internal_id or run_id
-    current_step = "ingestion"
-
-    def log_sink(level, msg):
-        logger.log(level, msg)
-        if internal_id:
-            insert_pipeline_log(client, internal_id, level, msg, step_name="tracker")
-
-    log_sink("INFO", f"Starting Optimized Pipeline: {run_id}")
-
+    
+    # Initialize enterprise tools
+    pipeline_log = PipelineLogger(client, step_run_id)
+    executor = StepExecutor(client, step_run_id)
+    monitor = HeartbeatMonitor(client)
+    
+    pipeline_log.info(f"Starting V3 Enterprise Pipeline: {run_id}")
+    
     try:
-        # ── Step 1: Ingestion (Optimized) ────────────────────
-        current_step = "ingestion"
-        update_pipeline_step(client, step_run_id, "ingestion", "running", progress=0)
+        # Initial heartbeat
+        if internal_id: 
+            update_heartbeat(client, internal_id)
 
-        # Snapshot para filtrado en Gmail
-        existing_ids_snapshot = get_existing_email_ids(client)
-        
-        service = get_gmail_service()
-        if not service:
-            raise Exception("Failed to initialize Gmail service")
+        # ── Step 1: Ingestion (Optimized with Retry) ─────────
+        def fetch_step():
+            with StepTimer(pipeline_log, "ingestion") as timer:
+                existing_ids_snapshot = get_existing_email_ids(client)
+                
+                service = get_gmail_service()
+                if not service:
+                    raise Exception("Failed to initialize Gmail service")
 
-        # Ingestion optimizada: filtrado de IDs ocurre DENTRO de fetch_emails (Pass 1)
-        # Solo se descargan cuerpos completos de emails estrictamente nuevos (Pass 2)
-        new_emails = fetch_emails(service, since_date=since_date, existing_ids=existing_ids_snapshot)
+                @with_retry(RetryConfig(max_attempts=3))
+                def fetch_emails_with_retry():
+                    return fetch_emails(service, since_date=since_date, existing_ids=existing_ids_snapshot)
+
+                new_emails = fetch_emails_with_retry()
+                timer.checkpoint(f"Fetched {len(new_emails)} new emails")
+
+                # Recovery Pass
+                pending_emails = get_unprocessed_emails(client, limit=50)
+                if pending_emails:
+                    pipeline_log.info(f"Recovery Pass: Found {len(pending_emails)} pending emails")
+                    new_ids = {e.email_id for e in new_emails}
+                    to_add = [p for p in pending_emails if p.email_id not in new_ids]
+                    new_emails.extend(to_add)
+
+                if not new_emails:
+                    return []
+
+                # Pre-filters
+                new_emails, filter_stats = apply_pre_filters(new_emails)
+                timer.checkpoint(f"Input: {len(new_emails)} passed pre-filter")
+
+                for email in new_emails:
+                    insert_raw_email(client, email)
+
+                if internal_id: update_heartbeat(client, internal_id)
+                return new_emails
+
+        new_emails = executor.execute_step("ingestion", fetch_step)
 
         if not new_emails:
-            update_pipeline_step(client, step_run_id, "ingestion", "success", progress=100)
-            log_sink("INFO", "No new emails found. Pipeline ending early.")
+            pipeline_log.info("No new emails. Pipeline ending early.")
             return stats
 
-        # Pre-filtros para ahorrar tokens
-        new_emails, filter_stats = apply_pre_filters(new_emails)
-        log_sink("INFO", f"Pre-filter: {filter_stats.total} total → {filter_stats.passed} passed")
+        # ── Step 2: Analysis (Adaptive with Partial Success) ─
+        def analysis_step():
+            with StepTimer(pipeline_log, "analysis") as timer:
+                classifier = get_classifier()
+                pipeline_log.info(f"Using classifier: {classifier.provider_name}")
+                
+                # Classify already retries internally in the factory for gemini batches,
+                # but we wrap the macro operation just in case
+                @with_retry(RetryConfig(max_attempts=3))
+                def classify_batch():
+                    return classifier.classify(new_emails)
+                    
+                classifications = classify_batch()
+                timer.checkpoint(f"Classified {len(classifications)} emails")
+                
+                if internal_id: update_heartbeat(client, internal_id)
+                return classifications
 
-        for i, email in enumerate(new_emails):
-            insert_raw_email(client, email)
-            if i % 10 == 0:
-                update_pipeline_step(client, step_run_id, "ingestion", "running", progress=int((i/len(new_emails))*100))
+        classifications = executor.execute_step("analysis", analysis_step)
 
-        update_pipeline_step(client, step_run_id, "ingestion", "success", progress=100)
-        if internal_id: update_heartbeat(client, internal_id)
+        # ── Step 3: Persistence (Deduplication via Matcher) ──
+        def persistence_step():
+            with StepTimer(pipeline_log, "persistence") as timer:
+                apps_cache = client.table("applications").select("*").execute().data
+                matcher = ApplicationMatcher()
 
-        # ── Step 2: Analysis (Adaptive) ──────────────────────
-        current_step = "analysis"
-        update_pipeline_step(client, step_run_id, "analysis", "running", progress=0)
-        
-        # Abstracción de clasificador (Fábrica)
-        classifier = get_classifier()
-        log_sink("INFO", f"Using classifier: {classifier.provider_name}")
-        
-        classifications = classifier.classify(new_emails)
-        update_pipeline_step(client, step_run_id, "analysis", "success", progress=100)
-        if internal_id: update_heartbeat(client, internal_id)
+                for email, classification in zip(new_emails, classifications):
+                    try:
+                        action = create_or_update_application(
+                            client, email, classification, apps_cache, matcher
+                        )
+                        stats[action] += 1
+                        
+                        if action == "added":
+                            # Refresh cache to enable threading across same batch
+                            apps_cache = client.table("applications").select("*").execute().data
+                            
+                        if action in ("added", "updated"):
+                            from models import CLASSIFICATION_TO_STATUS
+                            status_enum = CLASSIFICATION_TO_STATUS.get(classification.classification)
+                            status_val = status_enum.value if status_enum else "Applied"
 
-        # ── Step 3: Persistence ──────────────────────────────
-        current_step = "persistence"
-        update_pipeline_step(client, step_run_id, "persistence", "running", progress=0)
+                            send_notification(
+                                action=NotificationAction.ADDED if action == "added" else NotificationAction.UPDATED,
+                                company_name=classification.company_name,
+                                job_title=classification.job_title,
+                                status=status_val,
+                                platform=classification.platform,
+                                email_subject=email.subject,
+                            )
+                    except Exception as e:
+                        pipeline_log.error(f"Error persisting {email.email_id}: {str(e)}")
+                        stats["errors"] += 1
 
-        apps_cache = client.table("applications").select("*").execute().data
+                mark_raw_emails_processed(client, [e.email_id for e in new_emails])
+                pipeline_log.info(f"Optimized Run Complete: {stats}")
 
-        for i, (email, classification) in enumerate(zip(new_emails, classifications)):
-            try:
-                action = upsert_application(client, email, classification, apps_cache=apps_cache)
-                stats[action] += 1
+        executor.execute_step("persistence", persistence_step)
 
-                if action in ("added", "updated"):
-                    # Notificación opcional
-                    from models import CLASSIFICATION_TO_STATUS
-                    status_enum = CLASSIFICATION_TO_STATUS.get(classification.classification)
-                    status_val = status_enum.value if status_enum else "Applied"
-
-                    send_notification(
-                        action=NotificationAction.ADDED if action == "added" else NotificationAction.UPDATED,
-                        company_name=classification.company_name,
-                        job_title=classification.job_title,
-                        status=status_val,
-                        platform=classification.platform,
-                        email_subject=email.subject,
-                    )
-            except Exception as e:
-                log_sink("ERROR", f"Error persisting {email.email_id}: {str(e)}")
-                stats["errors"] += 1
-
-            if i % 5 == 0:
-                update_pipeline_step(client, step_run_id, "persistence", "running", progress=int((i/len(new_emails))*100))
-
-        mark_raw_emails_processed(client, [e.email_id for e in new_emails])
-        update_pipeline_step(client, step_run_id, "persistence", "success", progress=100)
-
-        log_sink("INFO", f"Optimized Run Complete: {stats}")
         return stats
 
     except Exception as e:
-        log_sink("ERROR", f"Pipeline crashed at step '{current_step}': {str(e)}")
-        update_pipeline_step(client, step_run_id, current_step, "failed", message=str(e))
+        pipeline_log.error(f"Pipeline crashed: {str(e)}")
+        # Note: StepExecutor already marks the specific step as failed and saves the error message.
         raise
+        
+    finally:
+        pipeline_log.flush()
+
+if __name__ == "__main__":
+    import argparse
+    from datetime import datetime
+    
+    parser = argparse.ArgumentParser(description="Run BewerbLens pipeline directly")
+    parser.add_argument("--since-date", type=str, help="Fetch emails since date (YYYY-MM-DD)")
+    args = parser.parse_args()
+    
+    dt = None
+    if args.since_date:
+        dt = datetime.strptime(args.since_date, "%Y-%m-%d").date()
+        
+    import uuid
+    print(f"Triggering pipeline manually (since_date: {dt})...")
+    result = run_pipeline(since_date=dt, run_id=str(uuid.uuid4()))
+    print(f"Pipeline finished! Results: {result}")
