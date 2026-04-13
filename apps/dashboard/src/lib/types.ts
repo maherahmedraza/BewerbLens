@@ -16,6 +16,17 @@ export interface Application {
   location: string;
   salary_range: string;
   source_email_id: string;
+  status_history: StatusHistoryEntry[];
+  email_count: number;
+  is_active: boolean;
+}
+
+export interface StatusHistoryEntry {
+  status: string;
+  timestamp: string;
+  email_subject: string;
+  source_email_id: string;
+  confidence: number;
 }
 
 export interface ApplicationStats {

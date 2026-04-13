@@ -76,6 +76,21 @@
   color: var(--text-muted);
 }
 
+.threadBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
 /* Status Badge */
 .statusBadge {
   display: inline-flex;
@@ -154,6 +169,99 @@
   background-color: var(--accent-blue-soft);
   color: var(--accent-blue);
   transform: scale(1.05);
+}
+
+.expandBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background-color: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.expandBtn:hover {
+  background-color: var(--bg-card);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+/* History Thread */
+.historyRow {
+  background-color: var(--bg-body);
+}
+
+.historyRow td {
+  padding: 0 0 24px 80px !important;
+}
+
+.historyContainer {
+  border-left: 2px solid var(--border-color);
+  margin-top: -16px;
+  padding-left: 24px;
+  padding-top: 16px;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.timelineItem {
+  position: relative;
+  display: flex;
+  gap: 16px;
+}
+
+.timelineDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  position: absolute;
+  left: -31px;
+  top: 4px;
+  border: 2px solid var(--bg-body);
+  z-index: 2;
+}
+
+.timelineContent {
+  flex: 1;
+}
+
+.timelineHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.timelineStatus {
+  font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.timelineDate {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.timelineSubject {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.expandedParent {
+  background-color: var(--bg-hover);
+  border-bottom: none !important;
 }
 
 /* Empty State */

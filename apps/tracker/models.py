@@ -105,6 +105,7 @@ class ApplicationRecord(BaseModel):
     location: str = ""
     salary_range: str = ""
     source_email_id: str = ""
+    status_history: list[dict] = Field(default_factory=list)
 
 
 class ProcessingLog(BaseModel):

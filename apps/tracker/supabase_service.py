@@ -183,6 +183,37 @@ def mark_raw_emails_processed(client: Client, email_ids: list[str]) -> int:
         return 0
 
 
+def get_unprocessed_emails(client: Client, limit: int = 50) -> list[EmailMetadata]:
+    """
+    Recupera emails de 'raw_emails' que aún no han sido procesados.
+    Útil para recuperar datos si el pipeline se detuvo inesperadamente.
+    """
+    try:
+        res = client.table("raw_emails") \
+            .select("*") \
+            .eq("is_processed", False) \
+            .order("email_date", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        emails = []
+        for row in res.data:
+            # Reconstruct EmailMetadata from raw record
+            emails.append(EmailMetadata(
+                email_id=row["email_id"],
+                thread_id=row["thread_id"],
+                subject=row["subject"],
+                sender=row["sender"],
+                sender_email=row["sender_email"],
+                date=date.fromisoformat(row["email_date"]),
+                body=row["body_preview"] # Usamos el preview guardado
+            ))
+        return emails
+    except Exception as e:
+        logger.error(f"Error recuperando emails pendientes: {e}")
+        return []
+
+
 # ── Silver Layer ──────────────────────────────────────────────
 
 def get_last_checkpoint(client: Client) -> date:
@@ -232,6 +263,17 @@ def upsert_application(
 
         upd_title = classification.job_title if current.get("job_title") in ("Not Specified", None, "") else current["job_title"]
 
+        # Append to status history
+        history = current.get("status_history") or []
+        new_entry = {
+            "status": status,
+            "date": email.date.isoformat(),
+            "changed_at": _utcnow().isoformat(),
+            "email_subject": email.subject[:100],
+            "email_id": email.email_id,
+        }
+        history.append(new_entry)
+
         client.table("applications").update({
             "status": status,
             "job_title": upd_title,
@@ -239,6 +281,7 @@ def upsert_application(
             "notes": f"{cur_status} -> {status} | {email.subject[:100]}",
             "location": classification.location or current.get("location", ""),
             "salary_range": classification.salary_range or current.get("salary_range", ""),
+            "status_history": history,
         }).eq("thread_id", email.thread_id).execute()
         return "updated"
 
@@ -253,12 +296,24 @@ def upsert_application(
         if cur_status == status or not _should_update_status(cur_status, status):
             return "skipped"
 
+        # Append to status history
+        history = fuzzy_match.get("status_history") or []
+        new_entry = {
+            "status": status,
+            "date": email.date.isoformat(),
+            "changed_at": _utcnow().isoformat(),
+            "email_subject": email.subject[:100],
+            "email_id": email.email_id,
+        }
+        history.append(new_entry)
+
         client.table("applications").update({
             "status": status,
             "last_updated": _utcnow().isoformat(),
             "notes": f"Fuzzy: {cur_status} -> {status} | {email.subject[:100]}",
             "location": classification.location or fuzzy_match.get("location", ""),
             "salary_range": classification.salary_range or fuzzy_match.get("salary_range", ""),
+            "status_history": history,
         }).eq("id", fuzzy_match["id"]).execute()
         return "updated"
 
@@ -283,6 +338,13 @@ def upsert_application(
         location=classification.location,
         salary_range=classification.salary_range,
         source_email_id=email.email_id,
+        status_history=[{
+            "status": status,
+            "date": email.date.isoformat(),
+            "changed_at": _utcnow().isoformat(),
+            "email_subject": email.subject[:100],
+            "email_id": email.email_id,
+        }]
     )
     _insert_with_retry(client, record)
     return "added"

@@ -106,9 +106,14 @@ class GeminiClassifier(EmailClassifier):
                         all_results.append(self._get_error_classification(i + 1, "Missing result"))
 
             except Exception as e:
+                err_msg = str(e)
+                if "API key expired" in err_msg or "API_KEY_INVALID" in err_msg:
+                    logger.critical(f"CRITICAL: Gemini API Key is invalid or expired. Pipeline aborted.")
+                    raise RuntimeError("Gemini API Key expired. Please update GEMINI_API_KEY in .env.") from e
+                
                 logger.error(f"Batch {batch_idx + 1} failed: {e}")
                 for i in range(len(batch)):
-                    all_results.append(self._get_error_classification(i + 1, str(e)))
+                    all_results.append(self._get_error_classification(i + 1, err_msg))
 
         return all_results
 

@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "./v3-components.css";
 import type { Metadata } from "next";
 import { ThemeProvider } from "../components/ThemeProvider";
 import { ThemeToggle } from "../components/ThemeToggle";

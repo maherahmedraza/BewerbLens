@@ -78,13 +78,42 @@ export default function PipelineMonitor() {
     return "pending";
   };
 
+  const calculateProgress = () => {
+    if (!latestRun) return 0;
+    if (latestRun.status === 'success') return 100;
+    if (latestRun.status === 'failed') return 100;
+    
+    if (!steps || steps.length === 0) return 0;
+    
+    // Stages: Ingestion (33%), Analysis (33%), Persistence (34%)
+    let totalProgress = 0;
+    const stageWeights: Record<string, number> = {
+      'ingestion': 33,
+      'analysis': 33,
+      'persistence': 34
+    };
+
+    steps.forEach((step: any) => {
+      const weight = stageWeights[step.step_name] || 0;
+      if (step.status === 'success') {
+        totalProgress += weight;
+      } else if (step.status === 'running') {
+        totalProgress += (weight * (step.progress_pct || 0)) / 100;
+      }
+    });
+
+    return Math.min(Math.round(totalProgress), 99);
+  };
+
+  const progress = calculateProgress();
+
   return (
     <div className={styles.card}>
       <div className={styles.statusHeader}>
         <div className={styles.indicatorContainer}>
           <div className={`${styles.pulse} ${isRunning ? styles.active : ""}`} />
           <span className={styles.statusText}>
-            {isRunning ? "Pipeline Running..." : "System Idle"}
+            {isRunning ? `Syncing (${progress}%)` : "System Idle"}
           </span>
         </div>
         <button 
@@ -99,6 +128,18 @@ export default function PipelineMonitor() {
           )}
           {isRunning || triggerMutation.isPending ? "Syncing..." : "Manual Sync"}
         </button>
+      </div>
+
+      <div className={styles.progressContainer}>
+        <div className={styles.progressTrack}>
+          <div 
+            className={styles.pBar} 
+            style={{ 
+              width: `${progress}%`,
+              opacity: isRunning ? 1 : 0
+            }} 
+          />
+        </div>
       </div>
 
       <div className={styles.stagesGrid}>

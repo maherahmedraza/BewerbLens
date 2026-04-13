@@ -2,9 +2,7 @@
 
 import { XMarkIcon, CommandLineIcon, ClipboardIcon } from "@heroicons/react/24/outline";
 import styles from "./LogDetailDrawer.module.css";
-import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
+import EnhancedLogViewer from "@/components/EnhancedLogViewer";
 
 interface LogDetailDrawerProps {
   onClose: () => void;
@@ -12,54 +10,11 @@ interface LogDetailDrawerProps {
 }
 
 export default function LogDetailDrawer({ onClose, run }: LogDetailDrawerProps) {
-  const queryClient = useQueryClient();
-  const logEndRef = useRef<HTMLDivElement>(null);
-  
-  // 1. Fetch incremental logs
-  const { data: incrementalLogs } = useQuery({
-    queryKey: ['run-logs', run?.id],
-    queryFn: async () => {
-      if (!run?.id) return [];
-      const { data } = await supabase
-        .from('pipeline_run_logs')
-        .select('*')
-        .eq('run_id', run.id)
-        .order('created_at', { ascending: true });
-      return data || [];
-    },
-    enabled: !!run?.id,
-  });
-
-  // 2. Realtime subscription for live tailing
-  useEffect(() => {
-    if (!run?.id || run.status !== 'running') return;
-
-    const channel = supabase.channel(`logs-${run.id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'pipeline_run_logs',
-        filter: `run_id=eq.${run.id}`
-      }, (payload) => {
-        // Optimistic update or just invalidate
-        queryClient.setQueryData(['run-logs', run.id], (old: any) => {
-          return [...(old || []), payload.new];
-        });
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [run?.id, run?.status]);
-
-  // 3. Auto-scroll to bottom
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [incrementalLogs]);
-
   const copyToClipboard = () => {
-    const text = incrementalLogs?.map((l: any) => `[${l.level}] ${l.message}`).join('\n') || run?.logs_summary;
-    if (text) {
-      navigator.clipboard.writeText(text);
+    // Basic fallback depending on EnhancedLogViewer's internal implementation
+    // The EnhancedLogViewer provides its own export button anyway
+    if (run?.logs_summary) {
+      navigator.clipboard.writeText(run.logs_summary);
     }
   };
 
@@ -113,28 +68,13 @@ export default function LogDetailDrawer({ onClose, run }: LogDetailDrawerProps) 
         <div className={styles.logContainer}>
           <div className={styles.logHeader}>
             <span>Real-time Log Stream</span>
-            <button className={styles.copyButton} onClick={copyToClipboard}>
-              <ClipboardIcon className={styles.copyIcon} />
-              Copy
-            </button>
           </div>
-          <div className={styles.logArea}>
-            {incrementalLogs && incrementalLogs.length > 0 ? (
-              incrementalLogs.map((log: any) => (
-                <div key={log.id} className={styles.logLine}>
-                  <span className={styles.logTime}>{new Date(log.created_at).toLocaleTimeString()}</span>
-                  <span className={`${styles.logLevel} ${styles[log.level.toLowerCase()]}`}>
-                    [{log.level}]
-                  </span>
-                  <span className={styles.logMsg}>{log.message}</span>
-                </div>
-              ))
-            ) : run?.logs_summary ? (
-              <pre>{run.logs_summary}</pre>
+          <div style={{ padding: '16px', background: '#1a1a1a', borderRadius: '8px', border: '1px solid #333' }}>
+            {run?.id ? (
+              <EnhancedLogViewer runId={run.id} isLive={run.status === 'running'} />
             ) : (
               <div className={styles.emptyLogs}>Waiting for logs...</div>
             )}
-            <div ref={logEndRef} />
           </div>
         </div>
 

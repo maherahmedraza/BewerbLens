@@ -19,6 +19,38 @@ from .supabase_client import supabase
 from .tracker import run_tracker_task
 
 
+class SupabaseLogHandler:
+    """
+    Sinks Loguru logs directly into the pipeline_run_logs table for real-time dashboard viewing.
+    """
+    def __init__(self, run_id: str):
+        self.run_id = run_id
+
+    def write(self, message):
+        # El mensaje viene formateado de Loguru
+        try:
+            # Quitamos el newline final
+            clean_msg = message.strip()
+            if not clean_msg:
+                return
+
+            # Extraemos el nivel [INFO], [ERROR], etc.
+            level = "INFO"
+            if "ERROR" in message: level = "ERROR"
+            elif "WARNING" in message: level = "WARNING"
+            elif "DEBUG" in message: level = "DEBUG"
+
+            supabase.table("pipeline_run_logs").insert({
+                "run_id": self.run_id,
+                "level": level,
+                "message": clean_msg,
+                "step_name": "worker"
+            }).execute()
+        except Exception:
+            # Fail silently to not crash the main loop
+            pass
+
+
 def worker_loop(worker_id: str):
     """
     Bucle continuo: reclama y ejecuta tareas de la cola pipeline_tasks.
@@ -55,9 +87,20 @@ def worker_loop(worker_id: str):
             else:
                 hb_thread = None
 
+            # Configurar log sink para este run
+            handler = SupabaseLogHandler(run_id) if run_id else None
+            handler_id = None
+            if handler:
+                handler_id = logger.add(handler.write, level="INFO")
+
             started_at = datetime.now(timezone.utc)
 
             try:
+                # Actualizar progreso inicial de ingestion
+                if run_id:
+                    from supabase_service import update_pipeline_step
+                    update_pipeline_step(supabase, run_id, "ingestion", "running", progress=10)
+
                 success, result_stats = _execute_task(task)
 
                 # Calcular duración
@@ -75,6 +118,8 @@ def worker_loop(worker_id: str):
                 logger.info(f"Task {task_id} {status} in {duration_ms}ms")
 
             finally:
+                if handler_id is not None:
+                    logger.remove(handler_id)
                 stop_heartbeat.set()
                 if hb_thread:
                     hb_thread.join(timeout=2)
