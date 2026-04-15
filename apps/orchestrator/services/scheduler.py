@@ -9,8 +9,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
 
-from services.supabase_client import supabase
+from services.supabase_client import supabase, get_client
 from services.tracker import tracker_service
+from failure_handler import HeartbeatMonitor
 
 # UUID fijo de la fila singleton en pipeline_config
 SINGLETON_ID = "00000000-0000-0000-0000-000000000001"
@@ -26,6 +27,7 @@ class SchedulerService:
         self.scheduler = AsyncIOScheduler()
         self.current_interval_hours = 4.0
         self.job_id = "main_pipeline_sync"
+        self.zombie_job_id = "zombie_cleanup"
         self.is_running = False
 
     async def start(self):
@@ -35,7 +37,16 @@ class SchedulerService:
             self.is_running = True
 
             await self.reschedule_from_db()
-            logger.info("Scheduler service started")
+
+            # Zombie detection: runs every 5 minutes
+            self.scheduler.add_job(
+                self._run_zombie_cleanup,
+                trigger=IntervalTrigger(minutes=5),
+                id=self.zombie_job_id,
+                replace_existing=True,
+            )
+
+            logger.info("Scheduler service started (with zombie cleanup every 5 min)")
 
     async def stop(self):
         """Para el scheduler de forma limpia."""
@@ -92,6 +103,17 @@ class SchedulerService:
             since_date=parameters.get("since_date") if parameters else None,
         )
         logger.info("Manual synchronization triggered via Scheduler")
+
+    def _run_zombie_cleanup(self):
+        """Detect and kill zombie pipeline runs."""
+        try:
+            client = get_client()
+            monitor = HeartbeatMonitor(client)
+            killed = monitor.cleanup_zombies()
+            if killed > 0:
+                logger.warning(f"Zombie cleanup: killed {killed} stale run(s)")
+        except Exception as e:
+            logger.error(f"Zombie cleanup failed: {e}")
 
 
 # Instancia global

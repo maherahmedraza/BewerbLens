@@ -38,7 +38,7 @@
   background: white;
   border-radius: 12px;
   padding: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .logoIcon {
@@ -122,4 +122,41 @@
   margin: 0;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.skeletonText {
+  width: 100px;
+  height: 14px;
+  background: var(--bg-hover);
+  border-radius: 4px;
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeletonPulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* Mobile: slide sidebar off-screen */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .userInfo {
+    overflow: hidden;
+  }
+
+  .userRole {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 140px;
+  }
 }

@@ -118,7 +118,7 @@ class HeartbeatMonitor:
             if not heartbeat_at:
                 continue
             
-            heartbeat_time = datetime.fromisoformat(heartbeat_at)
+            heartbeat_time = datetime.fromisoformat(heartbeat_at.replace("Z", "+00:00"))
             if heartbeat_time < threshold_time:
                 zombies.append(run)
                 logger.warning(

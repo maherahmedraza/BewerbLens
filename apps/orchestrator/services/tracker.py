@@ -18,7 +18,7 @@ from supabase_service import (
     get_last_checkpoint,
     init_pipeline_steps,
 )
-from tracker import run_pipeline
+from tracker import run_pipeline_multiuser
 
 
 def run_tracker_task(payload: dict) -> dict:
@@ -31,7 +31,12 @@ def run_tracker_task(payload: dict) -> dict:
     if since_date_str:
         since_date = datetime.fromisoformat(since_date_str).date()
 
-    return run_pipeline(
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("Missing user_id in task payload")
+
+    return run_pipeline_multiuser(
+        user_id=user_id,
         since_date=since_date,
         run_id=payload.get("run_id", "orchestrated"),
         internal_id=payload.get("internal_id"),
@@ -47,6 +52,7 @@ class TrackerService:
 
     async def start_run(
         self,
+        user_id: str,
         triggered_by: str = "manual",
         since_date: date | None = None,
     ) -> dict:
@@ -63,9 +69,9 @@ class TrackerService:
         # Generar ID legible
         run_id = f"RUN-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
-        # Crear registro en pipeline_runs
+        # Crear registro en pipeline_runs (con user_id)
         internal_id, started_at = create_pipeline_run(
-            client, run_id, triggered_by=triggered_by, since_date=since_date
+            client, run_id, user_id=user_id, triggered_by=triggered_by, since_date=since_date
         )
 
         if not internal_id:
@@ -78,7 +84,9 @@ class TrackerService:
         task_data = {
             "task_type": "sync",
             "status": "pending",
+            "user_id": user_id,
             "parameters": {
+                "user_id": user_id,
                 "since_date": since_date.isoformat() if since_date else None,
                 "run_id": run_id,
                 "internal_id": internal_id,
@@ -98,13 +106,25 @@ class TrackerService:
 
     async def trigger_scheduled_run(self):
         """
-        Ejecuta un run programado — invocado por el scheduler.
+        Ejecuta un run programado para cada usuario activo.
         """
         try:
-            result = await self.start_run(triggered_by="scheduler")
-            logger.info(f"Scheduled run started: {result['run_id']}")
+            client = get_client()
+            users = client.table("user_profiles").select("id").not_.is_("gmail_credentials", "null").execute()
+            
+            if not users.data:
+                logger.info("No users with active gmail_credentials found for scheduling.")
+                return
+
+            for user in users.data:
+                user_id = user["id"]
+                try:
+                    result = await self.start_run(user_id=user_id, triggered_by="scheduler")
+                    logger.info(f"Scheduled run started for user {user_id}: {result['run_id']}")
+                except Exception as e:
+                    logger.error(f"Scheduled run failed for user {user_id}: {str(e)}")
         except Exception as e:
-            logger.error(f"Scheduled run failed to start: {str(e)}")
+            logger.error(f"Scheduled batch run failed to start: {str(e)}")
 
 
 # Instancia global usada por scheduler.py y routers/runs.py

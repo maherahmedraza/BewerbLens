@@ -1,15 +1,52 @@
 import pytest
+from unittest.mock import MagicMock
 from models import EmailMetadata
-from pre_filter import apply_pre_filters
+from pre_filter import apply_user_filters
 
 from datetime import date
 
-def test_pre_filter_blocked_senders():
-    """Verify that emails from specifically blocked senders are filtered."""
+
+def _make_mock_client(filters=None):
+    """Create a mock Supabase client that returns the given filters."""
+    client = MagicMock()
+    mock_result = MagicMock()
+    mock_result.data = filters or []
+    client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = mock_result
+    return client
+
+
+def test_no_filters_allows_all():
+    """When user has no active filters, all emails pass through."""
+    client = _make_mock_client(filters=[])
     emails = [
         EmailMetadata(
-            email_id="1", thread_id="t1", 
-            sender="no-reply@linkedin.com", # Should be filtered out if job alert
+            email_id="1", thread_id="t1",
+            sender="recruiter@company.com",
+            subject="Interview Invitation",
+            body="...", date=date(2026, 4, 11)
+        )
+    ]
+
+    filtered, stats = apply_user_filters(client, "test-user-id", emails)
+    assert len(filtered) == 1
+    assert stats.filtered == 0
+
+
+def test_exclude_filter_blocks_matching_emails():
+    """Emails matching an EXCLUDE filter should be removed."""
+    client = _make_mock_client(filters=[
+        {
+            "filter_type": "EXCLUDE",
+            "field": "sender",
+            "pattern": "no-reply@linkedin.com",
+            "is_active": True,
+            "priority": 1,
+        }
+    ])
+    emails = [
+        EmailMetadata(
+            email_id="1", thread_id="t1",
+            sender="no-reply@linkedin.com",
             subject="New Job Alert",
             body="...", date=date(2026, 4, 11)
         ),
@@ -20,38 +57,7 @@ def test_pre_filter_blocked_senders():
             body="...", date=date(2026, 4, 11)
         )
     ]
-    
-    filtered, stats = apply_pre_filters(emails)
-    
-    # Simple check: filtered list should be smaller or at least contain the positive case
+
+    filtered, stats = apply_user_filters(client, "test-user-id", emails)
     assert any(e.email_id == "2" for e in filtered)
-
-def test_pre_filter_self_sent():
-    """Verify that emails sent by the user themselves are filtered."""
-    emails = [
-        EmailMetadata(
-            email_id="3", thread_id="t3",
-            sender="maherahmedraza1@gmail.com", # Self-sent
-            subject="Draft for application",
-            body="...", date=date(2026, 4, 11)
-        )
-    ]
-    
-    filtered, stats = apply_pre_filters(emails)
-    assert len(filtered) == 0
-    assert stats.self_sent == 1
-
-def test_pre_filter_subjects():
-    """Verify that marketing/alert subjects are filtered."""
-    emails = [
-        EmailMetadata(
-            email_id="4", thread_id="t4",
-            sender="alerts@indeed.com",
-            subject="10 new jobs for you", # Marketing/Alert
-            body="...", date=date(2026, 4, 11)
-        )
-    ]
-    
-    filtered, stats = apply_pre_filters(emails)
-    assert len(filtered) == 0
-    assert stats.generic_filtered == 1
+    assert stats.filtered >= 1

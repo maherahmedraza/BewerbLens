@@ -8,6 +8,7 @@ from services.supabase_client import supabase
 router = APIRouter()
 
 class TriggerRequest(BaseModel):
+    user_id: str
     since_date: Optional[date] = None
     triggered_by: str = "manual"  # "manual" | "backfill"
 
@@ -27,6 +28,7 @@ async def trigger_run(payload: TriggerRequest):
     
     try:
         run = await tracker_service.start_run(
+            user_id=payload.user_id,
             triggered_by=payload.triggered_by,
             since_date=payload.since_date,
         )

@@ -22,11 +22,11 @@ async function getApplications(query: string = ""): Promise<Application[]> {
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  "Applied": { label: "Pending", color: "#00a4e4" },
-  "Rejected": { label: "Rejected", color: "#e3120b" },
-  "Positive Response": { label: "Positive", color: "#0f2e53" },
-  "Interview": { label: "Interview", color: "#f59e0b" },
-  "Offer": { label: "Offer", color: "#8b5cf6" },
+  "Applied": { label: "Pending", color: "var(--accent-blue)" },
+  "Rejected": { label: "Rejected", color: "var(--accent-red)" },
+  "Positive Response": { label: "Positive", color: "var(--accent-green)" },
+  "Interview": { label: "Interview", color: "var(--accent-orange)" },
+  "Offer": { label: "Offer", color: "var(--accent-purple)" },
 };
 
 export default async function ApplicationTable({ highlightQuery }: { highlightQuery?: string }) {

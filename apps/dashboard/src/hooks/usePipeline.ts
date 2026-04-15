@@ -1,7 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
 import api from '@/lib/api';
+
+const supabase = createClient();
 
 /**
  * Hook to fetch the global pipeline configuration.
@@ -38,8 +40,11 @@ export function useTriggerRun() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (payload: { since_date?: string } = {}) => {
-      const { data } = await api.post('/runs/trigger', payload);
+    mutationFn: async (payload: { since_date?: string; user_id?: string } = {}) => {
+      // Include user_id from current auth session
+      const { data: { user } } = await supabase.auth.getUser();
+      const fullPayload = { ...payload, user_id: user?.id };
+      const { data } = await api.post('/runs/trigger', fullPayload);
       return data;
     },
     onSuccess: () => {

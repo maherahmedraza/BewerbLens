@@ -132,9 +132,10 @@ def worker_loop(worker_id: str):
 def _update_task_status(task_id: str, status: str):
     """Actualiza el status de una tarea en pipeline_tasks."""
     try:
-        supabase.table("pipeline_tasks").update({
-            "status": status,
-        }).eq("id", task_id).execute()
+        data = {"status": status}
+        if status in ["done", "failed"]:
+            data["finished_at"] = datetime.now(timezone.utc).isoformat()
+        supabase.table("pipeline_tasks").update(data).eq("id", task_id).execute()
     except Exception as e:
         logger.warning(f"Failed to update task {task_id} status: {e}")
 
@@ -152,7 +153,7 @@ def _finalize_run(
         run_status = "success" if status == "done" else "failed"
         data = {
             "status": run_status,
-            "ended_at": ended_at.isoformat(),
+            "finished_at": ended_at.isoformat(),
             "duration_ms": duration_ms,
             "summary_stats": result_stats or {},
         }

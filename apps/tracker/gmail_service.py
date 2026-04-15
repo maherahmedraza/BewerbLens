@@ -1,220 +1,282 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  Gmail Service — Connection and email extraction            ║
-# ║  Replaces the "Build Gmail Queries" and                     ║
-# ║  "Fetch Emails (Per Month)" nodes from the n8n workflow.    ║
+# ║  Gmail Service - Multi-User Support                         ║
 # ║                                                             ║
-# ║  v3.0: Uses two-pass fetching (metadata first, then full)   ║
-# ║  and optimized batch sizes (50) to minimize API usage.      ║
+# ║  Fetches Gmail credentials from user_profiles table         ║
+# ║  Falls back to .env for backward compatibility              ║
 # ╚══════════════════════════════════════════════════════════════╝
 
+import os
 import json
-import base64
-import re
-from collections.abc import Callable
-from datetime import date, datetime
-from itertools import islice
-from pathlib import Path
-from typing import Any
-
+import pickle
+from typing import Optional, Dict
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from loguru import logger
+from cryptography.fernet import Fernet
 
-from config import settings
-from models import EmailMetadata
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-# Required scopes — read-only Gmail access
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+def _get_cipher():
+    """Get Fernet cipher using ENCRYPTION_KEY from environment."""
+    key = os.getenv('ENCRYPTION_KEY')
+    if not key:
+        logger.warning("ENCRYPTION_KEY not found in environment. Credentials will be stored in PLAIN TEXT!")
+        return None
+    try:
+        return Fernet(key.encode())
+    except Exception as e:
+        logger.error(f"Invalid ENCRYPTION_KEY: {e}")
+        return None
 
-# Batch size for Gmail API (50 is optimal for speed vs rate limits)
-GMAIL_BATCH_SIZE = 50
+def _encrypt_data(data: dict) -> str:
+    """Encrypt dictionary to base64 string."""
+    cipher = _get_cipher()
+    if not cipher:
+        return json.dumps(data)
 
-# Senders to exclude directly in the Gmail query (server-side filtering)
-QUERY_EXCLUDED_SENDERS = [
-    "jobalerts-noreply@linkedin.com",
-    "info@jobagent.stepstone.de",
-    "jobalert@indeed.com",
-    "alert@indeed.com",
-    "noreply@indeed.com",
-    "news@mail.xing.com",
-]
+    json_data = json.dumps(data).encode()
+    encrypted = cipher.encrypt(json_data)
+    return encrypted.decode()
 
-# Keywords to search for job application emails
-JOB_KEYWORDS = [
-    "bewerbung", "application", "absage", "rejection",
-    "einladung", "interview", "eingangsbestatigung",
-    "angebot", "offer",
-    '"thank you for applying"', '"we received"',
-    '"ihre bewerbung"', '"deine bewerbung"',
-]
+def _decrypt_data(encrypted_str: str) -> dict:
+    """Decrypt base64 string to dictionary."""
+    if not encrypted_str:
+        return {}
 
-def _authenticate() -> Credentials:
-    """Autenticación OAuth2 priorizando variables de entorno."""
-    creds = None
-    if settings.gmail_token_json:
+    # Check if it looks like JSON (not encrypted)
+    if encrypted_str.strip().startswith('{'):
         try:
-            token_info = json.loads(settings.gmail_token_json)
-            creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+            return json.loads(encrypted_str)
+        except:
+            pass
+
+    cipher = _get_cipher()
+    if not cipher:
+        # Fallback: maybe it's plain JSON
+        try:
+            return json.loads(encrypted_str)
+        except:
+            logger.error("Data seems encrypted but no cipher available.")
+            return {}
+
+    try:
+        decrypted = cipher.decrypt(encrypted_str.encode())
+        return json.loads(decrypted.decode())
+    except Exception as e:
+        logger.error(f"Decryption failed: {e}. Trying plain JSON fallback.")
+        try:
+            return json.loads(encrypted_str)
+        except:
+            return {}
+
+
+def get_gmail_service_for_user(user_profile: Dict, db_client=None):
+    """
+    Get Gmail service for specific user.
+
+    Args:
+        user_profile: User profile dict from user_profiles table
+        db_client: Optional Supabase client for persisting refreshed tokens
+
+    Returns:
+        Gmail service object or None
+
+    Credential Priority:
+    1. user_profile['gmail_credentials'] (database)
+    2. .env GMAIL_TOKEN (fallback for single-user setups)
+    3. Interactive OAuth flow (development only)
+    """
+
+    user_id = user_profile.get('id')
+
+    # ═══ Strategy 1: Database Credentials (Multi-User) ═══
+    if user_profile.get('gmail_credentials'):
+        logger.info(f"Using database Gmail credentials for user {user_profile['email']}")
+        try:
+            # Handle both encrypted string and legacy dict
+            creds_data = user_profile['gmail_credentials']
+            if isinstance(creds_data, str):
+                creds_data = _decrypt_data(creds_data)
+
+            creds = _load_credentials_from_json(creds_data, client=db_client, user_id=user_id)
+            return build('gmail', 'v1', credentials=creds)
         except Exception as e:
-            logger.error(f"Failed to load GMAIL_TOKEN_JSON: {e}")
+            logger.error(f"Failed to load database credentials: {e}")
+            # Fall through to fallback
 
-    if not creds:
-        token_path = Path(settings.gmail_token_path)
-        if token_path.exists():
-            creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+    # ═══ Strategy 2: Environment Variable (Single-User Fallback) ═══
+    if os.getenv('GMAIL_TOKEN'):
+        logger.warning("Using .env GMAIL_TOKEN (single-user mode)")
+        try:
+            token_path = os.getenv('GMAIL_TOKEN', 'token.json')
+            if os.path.exists(token_path):
+                with open(token_path, 'r') as f:
+                    token_data = json.load(f)
+                creds = _load_credentials_from_json(token_data)
+                return build('gmail', 'v1', credentials=creds)
+        except Exception as e:
+            logger.error(f"Failed to load .env credentials: {e}")
+            # Fall through to OAuth flow
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            client_config = None
-            if settings.gmail_credentials_json:
-                try:
-                    client_config = json.loads(settings.gmail_credentials_json)
-                except Exception: pass
-            
-            if not client_config:
-                creds_path = Path(settings.gmail_credentials_path)
-                with open(creds_path) as f:
-                    client_config = json.load(f)
+    # ═══ Strategy 3: Interactive OAuth (Development Only) ═══
+    logger.warning("No credentials found. Starting OAuth flow (dev mode only)")
+    creds = _run_oauth_flow()
+    if creds:
+        return build('gmail', 'v1', credentials=creds)
 
-            flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-            creds = flow.run_local_server(port=8080, open_browser=False)
+    return None
 
-        if settings.gmail_token_json:
-            logger.warning("Gmail token was refreshed/generated. Please update your GMAIL_TOKEN_JSON environment variable with the new credentials.")
-            # Do NOT log the actual token to avoid secret leaks
-        else:
-            token_path = Path(settings.gmail_token_path)
-            token_path.write_text(new_token_json)
+
+def _load_credentials_from_json(creds_json: Dict, client=None, user_id: str = None) -> Credentials:
+    """
+    Load Google credentials from JSON dict.
+
+    Handles token refresh if expired.
+    If client and user_id are provided, persists refreshed tokens to DB.
+    """
+    creds = Credentials(
+        token=creds_json.get('token'),
+        refresh_token=creds_json.get('refresh_token'),
+        token_uri=creds_json.get('token_uri', 'https://oauth2.googleapis.com/token'),
+        client_id=creds_json.get('client_id'),
+        client_secret=creds_json.get('client_secret'),
+        scopes=creds_json.get('scopes', SCOPES)
+    )
+
+    # Refresh if expired
+    if not creds.valid and creds.expired and creds.refresh_token:
+        logger.info("Refreshing expired Gmail token")
+        creds.refresh(Request())
+
+        # Persist refreshed token back to DB for this user
+        if user_id and client:
+            try:
+                save_gmail_credentials_to_db(client, user_id, creds)
+                logger.info(f"Persisted refreshed Gmail token for user {user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to persist refreshed token: {e}")
 
     return creds
 
 
-def _build_query(after_date: date) -> str:
-    """Construye la query de búsqueda de Gmail."""
-    keywords_clause = " OR ".join(JOB_KEYWORDS)
-    exclusions = " ".join(f"-from:{s}" for s in QUERY_EXCLUDED_SENDERS)
-    after_str = after_date.strftime("%Y/%m/%d")
-    return f"({keywords_clause}) {exclusions} after:{after_str}"
+def _run_oauth_flow() -> Optional[Credentials]:
+    """
+    Run interactive OAuth flow (development only).
 
+    Requires credentials.json in project root.
+    """
+    creds_file = 'credentials.json'
+    if not os.path.exists(creds_file):
+        logger.error(f"Missing {creds_file}. Download from Google Cloud Console.")
+        return None
 
-def _extract_body(payload: dict) -> str:
-    """Extrae el cuerpo del email (truncado para eficiencia)."""
-    max_length = settings.prompt_body_max_chars
-    
-    if payload.get("body", {}).get("data"):
-        try:
-            return base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")[:max_length]
-        except Exception: pass
-
-    parts = payload.get("parts", [])
-    for part in parts:
-        mime_type = part.get("mimeType", "")
-        if mime_type == "text/plain" and part.get("body", {}).get("data"):
-            try:
-                return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")[:max_length]
-            except Exception: continue
-        if part.get("parts"):
-            nested = _extract_body(part)
-            if nested: return nested
-    return ""
-
-
-def _parse_message(msg: dict) -> EmailMetadata | None:
-    """Parsea el mensaje de Gmail a EmailMetadata."""
     try:
-        payload = msg.get("payload", {})
-        headers = payload.get("headers", [])
-        header_map = {h["name"].lower(): h["value"] for h in headers}
+        flow = InstalledAppFlow.from_client_secrets_file(creds_file, SCOPES)
+        creds = flow.run_local_server(port=0)
 
-        from_raw = header_map.get("from", "")
-        match = re.search(r"<([^>]+)>", from_raw)
-        sender_email = (match.group(1) if match else from_raw).lower().strip()
-        
-        # Parseo simple de fecha
-        date_str = header_map.get("date", "")
-        try:
-            email_date = datetime.strptime(date_str[:31].strip(), "%a, %d %b %Y %H:%M:%S %z").date()
-        except Exception:
-            email_date = date.today()
+        # Save to token.json for reuse
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
 
-        return EmailMetadata(
-            email_id=msg["id"],
-            thread_id=msg.get("threadId", msg["id"]),
-            subject=header_map.get("subject", ""),
-            sender=from_raw,
-            sender_email=sender_email,
-            date=email_date,
-            body=_extract_body(payload),
-        )
+        logger.success("OAuth flow complete. Token saved to token.json")
+        return creds
+
     except Exception as e:
-        logger.error(f"Fallo al parsear mensaje {msg.get('id')}: {e}")
+        logger.error(f"OAuth flow failed: {e}")
         return None
 
 
-def get_gmail_service():
-    """Retorna instancia del servicio Gmail API."""
-    try:
-        creds = _authenticate()
-        return build("gmail", "v1", credentials=creds)
-    except Exception as e:
-        logger.error(f"Fallo al construir servicio Gmail: {e}")
-        return None
-
-
-def fetch_emails(service: Any, since_date: date, existing_ids: set[str] = None) -> list[EmailMetadata]:
+def save_gmail_credentials_to_db(client, user_id: str, credentials: Credentials):
     """
-    Obtiene emails desde Gmail de forma optimizada.
-    Filtra por existing_ids ANTES de descargar el contenido completo.
+    Save Gmail credentials to user_profiles table.
+
+    Encrypts sensitive fields before storage.
     """
-    query = _build_query(since_date)
-    all_message_ids: list[str] = []
-    page_token = None
+    creds_dict = {
+        'token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_uri': credentials.token_uri,
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret,
+        'scopes': credentials.scopes
+    }
 
-    # 1. Listar IDs (pestaña mínima)
-    while True:
-        response = service.users().messages().list(userId="me", q=query, pageToken=page_token, maxResults=500).execute()
-        messages = response.get("messages", [])
-        all_message_ids.extend(m["id"] for m in messages)
-        page_token = response.get("nextPageToken")
-        if not page_token: break
+    # Encrypt before storing
+    encrypted_creds = _encrypt_data(creds_dict)
 
-    logger.info(f"Gmail query found {len(all_message_ids)} total candidates")
+    client.table("user_profiles").update({
+        "gmail_credentials": encrypted_creds
+    }).eq("id", user_id).execute()
 
-    # 2. Filtrar IDs que ya conocemos para no descargar sus cuerpos
-    target_ids = [mid for mid in all_message_ids if mid not in (existing_ids or set())]
-    
-    if not target_ids:
-        logger.info("No new emails found after ID filtering")
-        return []
+    logger.success(f"Saved Gmail credentials for user {user_id}")
 
-    logger.info(f"Fetching full metadata for {len(target_ids)} new emails using batches of {GMAIL_BATCH_SIZE}")
 
-    # 3. Descarga masiva (Batch) de los cuerpos completos solo para los nuevos
-    emails: list[EmailMetadata] = []
-    
-    def _make_callback(results_list: list):
-        def callback(rid, response, error):
-            if not error and response:
-                email = _parse_message(response)
-                if email: results_list.append(email)
-        return callback
+# ══════════════════════════════════════════════════════════════
+# Email Fetching (User-Scoped)
+# ══════════════════════════════════════════════════════════════
 
-    msg_iter = iter(target_ids)
-    while True:
-        batch_ids = list(islice(msg_iter, GMAIL_BATCH_SIZE))
-        if not batch_ids: break
+def fetch_emails_for_user(service, user_id: str, since_date=None, existing_ids=None):
+    """
+    Fetch emails for specific user.
 
-        batch_results = []
-        batch = service.new_batch_http_request()
-        for mid in batch_ids:
-            batch.add(service.users().messages().get(userId="me", id=mid, format="full"), callback=_make_callback(batch_results))
-        
-        batch.execute()
-        emails.extend(batch_results)
+    Args:
+        service: Gmail API service object
+        user_id: User UUID (for logging/tracking)
+        since_date: Fetch emails from this date onwards
+        existing_ids: Set of email IDs already in database
 
-    logger.info(f"Successfully extracted {len(emails)} new emails")
+    Returns:
+        List of Email objects
+    """
+    from gmail_service import fetch_emails  # Import original function
+
+    # Reuse existing fetch_emails logic
+    # Just add user_id to logs for multi-tenant tracking
+    logger.info(f"Fetching emails for user {user_id}")
+
+    emails = fetch_emails(service, since_date, existing_ids)
+
+    logger.info(f"Fetched {len(emails)} emails for user {user_id}")
     return emails
+
+
+# ══════════════════════════════════════════════════════════════
+# OAuth Callback Handler (for web-based OAuth)
+# ══════════════════════════════════════════════════════════════
+
+def handle_gmail_oauth_callback(code: str, user_id: str, client):
+    """
+    Handle OAuth callback from Gmail authorization.
+
+    Args:
+        code: Authorization code from Google
+        user_id: User UUID
+        client: Supabase client
+
+    Returns:
+        True if successful, False otherwise
+
+    Usage:
+        # In your FastAPI/Next.js callback route:
+        handle_gmail_oauth_callback(request.query.code, user.id, supabase)
+    """
+    try:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            'credentials.json',
+            scopes=SCOPES,
+            redirect_uri=os.getenv('GMAIL_OAUTH_REDIRECT_URI', 'http://localhost:3000/auth/gmail/callback')
+        )
+
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
+
+        # Save to database
+        save_gmail_credentials_to_db(client, user_id, credentials)
+
+        return True
+
+    except Exception as e:
+        logger.error(f"OAuth callback failed: {e}")
+        return False

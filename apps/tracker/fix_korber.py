@@ -20,9 +20,9 @@ def reset_korber():
         print(f'Deleting Korber App ID: {app_id} with {len(email_ids)} emails.')
         client.table('applications').delete().eq('id', app_id).execute()
         
-        # Also remove them from processed_emails so the pipeline will refetch them
+        # Also remove them from raw_emails so the pipeline will refetch them
         for eid in email_ids:
-            client.table('processed_emails').delete().eq('email_id', eid).execute()
+            client.table('raw_emails').delete().eq('email_id', eid).execute()
 
 if __name__ == "__main__":
     reset_korber()

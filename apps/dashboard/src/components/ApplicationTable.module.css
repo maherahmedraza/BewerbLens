@@ -6,14 +6,16 @@
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
-  overflow: hidden;
+  overflow-x: auto;
   box-shadow: var(--shadow-sm);
+  -webkit-overflow-scrolling: touch;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
+  min-width: 700px;
 }
 
 .table th {

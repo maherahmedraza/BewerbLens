@@ -10,9 +10,10 @@ import styles from "./PipelineMonitor.module.css";
 import { usePipelineRuns, useTriggerRun, useRealtimePipeline } from "@/hooks/usePipeline";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 
 export default function PipelineMonitor() {
+  const supabase = createClient();
   // 1. Live Realtime Subscription
   useRealtimePipeline();
   

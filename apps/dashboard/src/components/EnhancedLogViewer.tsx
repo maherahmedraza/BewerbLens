@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 import { List } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 
@@ -30,6 +30,7 @@ interface EnhancedLogViewerProps {
 }
 
 export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLogViewerProps) {
+  const supabase = createClient();
   const queryClient = useQueryClient();
   // @ts-ignore
   const listRef = useRef<any>(null);

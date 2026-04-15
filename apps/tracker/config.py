@@ -1,10 +1,10 @@
-# ╔══════════════════════════════════════════════════════════════╗
-# ║  Centralized configuration with Pydantic Settings           ║
-# ║  Validates all environment variables on startup.            ║
-# ╚══════════════════════════════════════════════════════════════╝
-
+import os
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+# Absolute path to the .env file in project root
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ENV_FILE = os.path.join(ROOT_DIR, ".env")
 
 
 class Settings(BaseSettings):
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     classifier_provider: str = Field(default="gemini") # "gemini" | "openai"
 
     model_config = {
-        "env_file": "../../.env",
+        "env_file": ENV_FILE,
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
         "extra": "ignore",

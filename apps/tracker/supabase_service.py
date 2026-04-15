@@ -195,7 +195,7 @@ def get_unprocessed_emails(client: Client, limit: int = 50) -> list[EmailMetadat
             .order("email_date", desc=True) \
             .limit(limit) \
             .execute()
-        
+
         emails = []
         for row in res.data:
             # Reconstruct EmailMetadata from raw record
@@ -234,184 +234,11 @@ def get_existing_thread_ids(client: Client) -> set[str]:
         return set()
 
 
-def upsert_application(
-    client: Client,
-    email: EmailMetadata,
-    classification: EmailClassification,
-    apps_cache: list[dict] | None = None,
-) -> str:
-    """
-    # Fix #17: accept pre-fetched apps_cache to avoid O(n^2) DB calls.
-    """
-    status_enum = CLASSIFICATION_TO_STATUS.get(classification.classification)
-    if status_enum is None:
-        return "skipped"
-
-    status = status_enum.value
-    company = _clean_company_name(classification.company_name, email.sender_email)
-    platform = _detect_platform(email.sender_email, classification.platform)
-
-    # 1. Direct thread match
-    existing = client.table("applications").select("*").eq("thread_id", email.thread_id).execute()
-    
-    if existing.data:
-        current = existing.data[0]
-        cur_status = current.get("status", "Applied")
-
-        if cur_status == status or not _should_update_status(cur_status, status):
-            return "skipped"
-
-        upd_title = classification.job_title if current.get("job_title") in ("Not Specified", None, "") else current["job_title"]
-
-        # Append to status history
-        history = current.get("status_history") or []
-        new_entry = {
-            "status": status,
-            "date": email.date.isoformat(),
-            "changed_at": _utcnow().isoformat(),
-            "email_subject": email.subject[:100],
-            "email_id": email.email_id,
-        }
-        history.append(new_entry)
-
-        client.table("applications").update({
-            "status": status,
-            "job_title": upd_title,
-            "last_updated": _utcnow().isoformat(),
-            "notes": f"{cur_status} -> {status} | {email.subject[:100]}",
-            "location": classification.location or current.get("location", ""),
-            "salary_range": classification.salary_range or current.get("salary_range", ""),
-            "status_history": history,
-        }).eq("thread_id", email.thread_id).execute()
-        return "updated"
-
-    # 2. Fuzzy match — Fix #Q: cache obligatorio, sin fallback a DB
-    if apps_cache is not None:
-        fuzzy_match = _find_fuzzy_match(apps_cache, company, classification.job_title)
-    else:
-        fuzzy_match = None
-
-    if fuzzy_match:
-        cur_status = fuzzy_match.get("status", "Applied")
-        if cur_status == status or not _should_update_status(cur_status, status):
-            return "skipped"
-
-        # Append to status history
-        history = fuzzy_match.get("status_history") or []
-        new_entry = {
-            "status": status,
-            "date": email.date.isoformat(),
-            "changed_at": _utcnow().isoformat(),
-            "email_subject": email.subject[:100],
-            "email_id": email.email_id,
-        }
-        history.append(new_entry)
-
-        client.table("applications").update({
-            "status": status,
-            "last_updated": _utcnow().isoformat(),
-            "notes": f"Fuzzy: {cur_status} -> {status} | {email.subject[:100]}",
-            "location": classification.location or fuzzy_match.get("location", ""),
-            "salary_range": classification.salary_range or fuzzy_match.get("salary_range", ""),
-            "status_history": history,
-        }).eq("id", fuzzy_match["id"]).execute()
-        return "updated"
-
-    # 3. New record
-    if company.lower() in {"unknown", "not specified", "n/a", ""}:
-        return "skipped"
-
-    record = ApplicationRecord(
-        thread_id=email.thread_id,
-        company_name=company,
-        job_title=classification.job_title or "Not Specified",
-        platform=platform,
-        status=status,
-        confidence=classification.confidence,
-        email_subject=email.subject[:150],
-        email_from=email.sender[:100],
-        date_applied=email.date,
-        last_updated=_utcnow(),
-        notes=classification.reasoning[:150],
-        gmail_link=email.gmail_link,
-        job_listing_url=classification.job_listing_url,
-        location=classification.location,
-        salary_range=classification.salary_range,
-        source_email_id=email.email_id,
-        status_history=[{
-            "status": status,
-            "date": email.date.isoformat(),
-            "changed_at": _utcnow().isoformat(),
-            "email_subject": email.subject[:100],
-            "email_id": email.email_id,
-        }]
-    )
-    _insert_with_retry(client, record)
-    return "added"
-
-
-# ── Fuzzy Logic ──────────────────────────────────────────────
-
-_FUZZY_STOPWORDS: set[str] = {
-    "gmbh", "ag", "se", "kg", "co", "inc", "ltd", "llc", "corp",
-    "deutschland", "germany", "europe", "international",
-    "logistik", "logistics", "services", "solutions", "group",
-    "consulting", "engineering", "digital", "systems", "technology",
-    "management", "partners", "holding", "und", "and", "the",
-    "mbh", "ohg", "e.v.", "ev", "eg",
-}
-
-
-def _strip_stopwords(name: str) -> str:
-    words = name.lower().split()
-    filtered = [w for w in words if w not in _FUZZY_STOPWORDS]
-    return " ".join(filtered) if filtered else name.lower()
-
-
-def _find_fuzzy_match(
-    records_cache: list[dict],
-    company_name: str,
-    job_title: str,
-) -> dict | None:
-    """
-    Fix #Q: cache es obligatorio, sin parámetro client ni fallback a DB.
-    Elimina la ruta O(n²) que consultaba la DB por cada email del batch.
-    """
-    cleaned_input = _strip_stopwords(company_name)
-    if len(cleaned_input) < 3:
-        return None
-
-    best_match, best_score = None, 0.0
-
-    for rec in records_cache:
-        cleaned_existing = _strip_stopwords(rec.get("company_name", ""))
-        if len(cleaned_existing) < 3:
-            continue
-
-        co_score = fuzz.ratio(cleaned_input, cleaned_existing) / 100.0
-        if co_score < 0.80:
-            continue
-
-        score = co_score
-        ex_title = rec.get("job_title", "")
-        has_in_t = job_title and job_title != "Not Specified"
-        has_ex_t = ex_title and ex_title != "Not Specified"
-
-        if has_in_t and has_ex_t:
-            t_score = fuzz.token_sort_ratio(job_title.lower(), ex_title.lower()) / 100.0
-            if t_score < 0.85:
-                continue
-            score = co_score * 0.4 + t_score * 0.6
-        elif has_in_t or has_ex_t:
-            continue
-        elif co_score < 0.95:
-            continue
-
-        if score > best_score and score >= 0.85:
-            best_score = score
-            best_match = rec
-
-    return best_match
+# ── Dead code removed ─────────────────────────────────────────
+# upsert_application() and _find_fuzzy_match() were the original
+# single-user matching functions, superseded by fuzzy_matcher.py's
+# upsert_application_fixed() + ApplicationMatcher class.
+# Removed in Sprint 3 (T-007) — see git history for reference.
 
 
 # ── Generic Helpers ───────────────────────────────────────────
@@ -450,6 +277,7 @@ def create_pipeline_run(
     run_id: str,
     triggered_by: str = "scheduler",
     since_date: date | None = None,
+    user_id: str | None = None,
 ) -> tuple[str | None, datetime | None]:
     """
     Fix #C: Corregido el desempaquetado de tupla con if/else explícito.
@@ -466,6 +294,8 @@ def create_pipeline_run(
             "parameters": {"since_date": since_date.isoformat() if since_date else None},
             "current_phase": "ingestion",
         }
+        if user_id:
+            data["user_id"] = user_id
         res = client.table("pipeline_runs").insert(data).execute()
 
         if res.data:
@@ -492,7 +322,7 @@ def update_pipeline_run(
 
         data = {
             "status": status,
-            "ended_at": ended_at.isoformat(),
+            "finished_at": ended_at.isoformat(),
             "duration_ms": duration_ms,
             "summary_stats": stats or {},
             "logs_summary": logs_summary[:10000],
@@ -535,7 +365,7 @@ def update_pipeline_step(
         if status == "running":
             data["started_at"] = now_iso
         elif status in ("success", "failed"):
-            data["ended_at"] = now_iso
+            data["finished_at"] = now_iso
         if stats:
             data["stats"] = stats
         client.table("pipeline_run_steps").update(data).match({"run_id": run_id, "step_name": step_name}).execute()
