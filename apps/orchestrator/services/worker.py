@@ -132,10 +132,7 @@ def worker_loop(worker_id: str):
 def _update_task_status(task_id: str, status: str):
     """Actualiza el status de una tarea en pipeline_tasks."""
     try:
-        data = {"status": status}
-        if status in ["done", "failed"]:
-            data["finished_at"] = datetime.now(timezone.utc).isoformat()
-        supabase.table("pipeline_tasks").update(data).eq("id", task_id).execute()
+        supabase.table("pipeline_tasks").update({"status": status}).eq("id", task_id).execute()
     except Exception as e:
         logger.warning(f"Failed to update task {task_id} status: {e}")
 
@@ -153,7 +150,7 @@ def _finalize_run(
         run_status = "success" if status == "done" else "failed"
         data = {
             "status": run_status,
-            "finished_at": ended_at.isoformat(),
+            "ended_at": ended_at.isoformat(),
             "duration_ms": duration_ms,
             "summary_stats": result_stats or {},
         }
@@ -161,8 +158,26 @@ def _finalize_run(
             data["error_message"] = str(result_stats["error"])[:500]
 
         supabase.table("pipeline_runs").update(data).eq("id", run_id).execute()
+
+        # Mark failed step if pipeline crashed
+        if run_status == "failed":
+            _mark_failed_steps(run_id, result_stats.get("error", ""))
     except Exception as e:
         logger.warning(f"Failed to finalize run {run_id}: {e}")
+
+
+def _mark_failed_steps(run_id: str, error_msg: str):
+    """Mark any still-running steps as failed when the run fails."""
+    try:
+        from supabase_service import update_pipeline_step
+        res = supabase.table("pipeline_run_steps").select("step_name, status").eq("run_id", run_id).execute()
+        for step in (res.data or []):
+            if step["status"] in ("running", "pending"):
+                new_status = "failed" if step["status"] == "running" else "skipped"
+                msg = error_msg[:200] if step["status"] == "running" else "Skipped due to earlier failure"
+                update_pipeline_step(supabase, run_id, step["step_name"], new_status, message=msg)
+    except Exception as e:
+        logger.warning(f"Failed to mark steps for run {run_id}: {e}")
 
 
 def _heartbeat_loop(run_id: str, stop_event: threading.Event):

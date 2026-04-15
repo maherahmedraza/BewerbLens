@@ -364,8 +364,8 @@ def update_pipeline_step(
         now_iso = _utcnow().isoformat()
         if status == "running":
             data["started_at"] = now_iso
-        elif status in ("success", "failed"):
-            data["finished_at"] = now_iso
+        elif status in ("success", "failed", "skipped"):
+            data["ended_at"] = now_iso
         if stats:
             data["stats"] = stats
         client.table("pipeline_run_steps").update(data).match({"run_id": run_id, "step_name": step_name}).execute()
