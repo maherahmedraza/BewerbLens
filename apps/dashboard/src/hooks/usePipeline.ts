@@ -30,6 +30,11 @@ export function usePipelineRuns(limit = 20) {
       return data;
     },
     refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const runs = query.state.data as any[] | undefined;
+      const hasRunning = runs?.some((r: any) => r.status === 'running' || r.status === 'pending');
+      return hasRunning ? 3000 : false;
+    },
   });
 }
 

@@ -26,7 +26,7 @@ export default function PipelineMonitor() {
   const latestRun = runs?.[0];
   const isRunning = latestRun?.status === 'running' || latestRun?.status === 'pending' || triggerMutation.isPending;
 
-  // 3. Fetch Steps for the latest run
+  // 3. Fetch Steps for the latest run (polls every 2s while running)
   const { data: steps } = useQuery({
     queryKey: ['pipeline-steps', latestRun?.id],
     queryFn: async () => {
@@ -38,6 +38,7 @@ export default function PipelineMonitor() {
       return data || [];
     },
     enabled: !!latestRun?.id,
+    refetchInterval: isRunning ? 2000 : false,
   });
 
   // ── Sync with Realtime Steps ──────────────────────────
@@ -68,14 +69,15 @@ export default function PipelineMonitor() {
   const getStageStatus = (stage: string) => {
     if (!latestRun) return "pending";
     if (latestRun.status === 'success') return "success";
-    if (latestRun.status === 'failed') return "error";
     
+    // Use per-step data when available (even for failed runs)
     const step = steps?.find((s: any) => s.step_name === stage);
-    if (!step) return "pending";
+    if (step) {
+      if (step.status === 'success') return "success";
+      if (step.status === 'running') return "active";
+      if (step.status === 'failed') return "error";
+    }
     
-    if (step.status === 'success') return "success";
-    if (step.status === 'running') return "active";
-    if (step.status === 'failed') return "error";
     return "pending";
   };
 
@@ -114,7 +116,9 @@ export default function PipelineMonitor() {
         <div className={styles.indicatorContainer}>
           <div className={`${styles.pulse} ${isRunning ? styles.active : ""}`} />
           <span className={styles.statusText}>
-            {isRunning ? `Syncing (${progress}%)` : "System Idle"}
+            {isRunning ? `Syncing (${progress}%)` 
+              : latestRun?.status === 'failed' ? "Last Run Failed" 
+              : "System Idle"}
           </span>
         </div>
         <button 
@@ -147,24 +151,30 @@ export default function PipelineMonitor() {
         <StageItem 
           title="Ingestion" 
           status={getStageStatus("ingestion")} 
-          description="Fetching Gmail data" 
+          description="Fetching Gmail data"
+          step={steps?.find((s: any) => s.step_name === 'ingestion')}
         />
         <StageItem 
           title="Analysis" 
           status={getStageStatus("analysis")} 
-          description="Gemini LLM Processing" 
+          description="Gemini LLM Processing"
+          step={steps?.find((s: any) => s.step_name === 'analysis')}
         />
         <StageItem 
           title="Persistence" 
           status={getStageStatus("persistence")} 
-          description="Supabase Synchronization" 
+          description="Supabase Synchronization"
+          step={steps?.find((s: any) => s.step_name === 'persistence')}
         />
       </div>
     </div>
   );
 }
 
-function StageItem({ title, status, description }: { title: string; status: string; description: string }) {
+function StageItem({ title, status, description, step }: { title: string; status: string; description: string; step?: any }) {
+  const progressPct = step?.progress_pct || 0;
+  const message = step?.message;
+
   return (
     <div className={`${styles.stage} ${styles[status]}`}>
       <div className={styles.stageIcon}>
@@ -174,8 +184,21 @@ function StageItem({ title, status, description }: { title: string; status: stri
         {status === "pending" && <div className={styles.dot} />}
       </div>
       <div className={styles.stageContent}>
-        <h4 className={styles.stageTitle}>{title}</h4>
-        <p className={styles.stageDesc}>{description}</p>
+        <h4 className={styles.stageTitle}>
+          {title}
+          {status === "active" && <span className={styles.stagePct}>{progressPct}%</span>}
+          {status === "success" && <span className={styles.stagePct}>100%</span>}
+        </h4>
+        <p className={styles.stageDesc}>
+          {status === "error" && message ? message 
+            : status === "active" && message ? message 
+            : description}
+        </p>
+        {status === "active" && (
+          <div className={styles.stageProgressTrack}>
+            <div className={styles.stageProgressBar} style={{ width: `${progressPct}%` }} />
+          </div>
+        )}
       </div>
     </div>
   );
