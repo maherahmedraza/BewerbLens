@@ -12,7 +12,7 @@ from typing import Optional, List
 from loguru import logger
 
 from classifier_factory import get_classifier
-from gmail_service import get_gmail_service_for_user  # NEW
+from gmail_service import get_gmail_service_for_user, fetch_emails_for_user
 from pre_filter import apply_user_filters  # NEW
 from supabase_service import (
     get_client,
@@ -260,25 +260,38 @@ def get_unprocessed_emails_for_user(client, user_id, limit=50):
         "is_processed", False
     ).limit(limit).execute()
     
-    # Convert to Email objects (assuming you have an Email model)
-    from models import Email
-    return [Email(**row) for row in result.data]
+    # Convert to EmailMetadata objects
+    from models import EmailMetadata
+    emails = []
+    for row in result.data:
+        try:
+            emails.append(EmailMetadata(
+                email_id=row.get("email_id", ""),
+                thread_id=row.get("thread_id", ""),
+                subject=row.get("subject", ""),
+                sender=row.get("sender", ""),
+                sender_email=row.get("sender_email", ""),
+                date=row.get("email_date") or row.get("date"),
+                body=row.get("body_preview", "") or row.get("body", ""),
+            ))
+        except Exception:
+            pass
+    return emails
 
 
 def insert_raw_email_with_user(client, user_id, email):
-    """Insert raw email with user_id."""
-    client.table("raw_emails").insert({
-        "user_id": user_id,  # ← Add user_id
+    """Insert raw email with user_id (upsert to handle re-runs)."""
+    client.table("raw_emails").upsert({
+        "user_id": user_id,
         "email_id": email.email_id,
         "thread_id": email.thread_id,
         "subject": email.subject,
         "sender": email.sender,
         "sender_email": email.sender_email,
-        "body_preview": email.body_preview[:800],
-        "email_date": str(email.email_date),
+        "body_preview": email.body[:800],
+        "email_date": str(email.date),
         "gmail_link": email.gmail_link,
-        "raw_headers": email.raw_headers or {},
-    }).execute()
+    }, on_conflict="email_id").execute()
 
 
 def send_notification_for_user(user, **kwargs):

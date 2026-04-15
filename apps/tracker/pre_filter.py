@@ -148,7 +148,7 @@ def _matches_filter(email, filter_rule: dict) -> bool:
     elif field == 'sender':
         text = email.sender_email or email.sender
     elif field == 'body':
-        text = email.body_preview
+        text = email.body
     else:
         logger.warning(f"Unknown filter field: {field}")
         return False
@@ -281,18 +281,17 @@ def test_filter_against_email(filter_rule: dict, email_subject: str, email_sende
         filter = {"field": "subject", "pattern": "bewerbung", "is_regex": False}
         matches = test_filter_against_email(filter, "Ihre Bewerbung", "hr@company.com")
     """
-    from models import Email
+    from models import EmailMetadata
     
     # Create mock email object
-    mock_email = Email(
+    mock_email = EmailMetadata(
         email_id="test",
         thread_id="test",
         subject=email_subject,
         sender=email_sender,
         sender_email=email_sender,
-        body_preview="",
-        email_date=None,
-        gmail_link="",
+        body="",
+        date=None,
         raw_headers={}
     )
     

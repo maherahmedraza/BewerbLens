@@ -296,7 +296,7 @@ def upsert_application_fixed(
             display_status = str(classification.classification)
 
         status_update = {
-            "timestamp": str(email.email_date),
+            "timestamp": str(email.date),
             "status": str(display_status),
             "email_subject": email.subject,
             "source_email_id": email.email_id,
@@ -334,7 +334,7 @@ def upsert_application_fixed(
             display_status = str(classification.classification)
 
         initial_status = {
-            "timestamp": str(email.email_date),
+            "timestamp": str(email.date),
             "status": str(display_status),
             "email_subject": email.subject,
             "source_email_id": email.email_id,
@@ -351,7 +351,7 @@ def upsert_application_fixed(
             "confidence": classification.confidence,
             "email_subject": email.subject,
             "email_from": email.sender_email,
-            "date_applied": email.email_date,
+            "date_applied": str(email.date),
             "gmail_link": email.gmail_link,
             "source_email_id": email.email_id,
             "status_history": [initial_status],

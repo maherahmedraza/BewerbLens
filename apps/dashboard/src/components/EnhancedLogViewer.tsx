@@ -2,9 +2,8 @@
 // ║  Enhanced Log Viewer — High-Performance UI Component        ║
 // ║                                                             ║
 // ║  Features:                                                  ║
-// ║  • Virtual scrolling for 10,000+ log lines                  ║
-// ║  • Efficient real-time updates via Supabase Realtime        ║
-// ║  • Smart pagination for historical logs                     ║
+// ║  • Scrollable log display with auto-scroll                  ║
+// ║  • Efficient real-time updates via polling + Realtime        ║
 // ║  • Search and filtering                                     ║
 // ╚══════════════════════════════════════════════════════════════╝
 
@@ -13,8 +12,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
-import { List } from 'react-window';
-import { AutoSizer } from 'react-virtualized-auto-sizer';
 
 interface LogEntry {
   id: string;
@@ -26,55 +23,34 @@ interface LogEntry {
 
 interface EnhancedLogViewerProps {
   runId: string;
-  isLive?: boolean;  // true for currently running, false for historical
+  isLive?: boolean;
 }
 
 export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLogViewerProps) {
   const supabase = createClient();
   const queryClient = useQueryClient();
-  // @ts-ignore
-  const listRef = useRef<any>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [levelFilter, setLevelFilter] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  // ── Strategy 1: Paginated Loading for Historical Runs ─────────
-  const PAGE_SIZE = 100;
-  const [currentPage, setCurrentPage] = useState(0);
-
+  // ── Fetch logs (works for both live and historical) ────────────
   const { data: logs, isLoading } = useQuery({
-    queryKey: ['logs', runId, currentPage],
+    queryKey: ['logs', runId],
     queryFn: async () => {
-      const start = currentPage * PAGE_SIZE;
-      const end = start + PAGE_SIZE - 1;
-
       const { data, error } = await supabase
         .from('pipeline_run_logs')
         .select('*')
         .eq('run_id', runId)
         .order('created_at', { ascending: true })
-        .range(start, end);
+        .limit(1000);
 
       if (error) throw error;
       return data as LogEntry[];
     },
-    enabled: !!runId && !isLive,
-    staleTime: Infinity,  // Historical logs never change
-  });
-
-  // ── Strategy 2: Real-Time Streaming for Live Runs ─────────────
-  const { data: liveLogs } = useQuery({
-    queryKey: ['live-logs', runId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('pipeline_run_logs')
-        .select('*')
-        .eq('run_id', runId)
-        .order('created_at', { ascending: true });
-      return data as LogEntry[];
-    },
-    enabled: !!runId && isLive,
-    refetchInterval: isLive ? 2000 : false,  // Poll every 2s for live runs
+    enabled: !!runId,
+    refetchInterval: isLive ? 2000 : false,
+    staleTime: isLive ? 0 : Infinity,
   });
 
   // ── Real-Time Subscription (Live Runs Only) ────────────────────
@@ -91,20 +67,8 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
           table: 'pipeline_run_logs',
           filter: `run_id=eq.${runId}`,
         },
-        (payload) => {
-          // Optimistically append new log
-          queryClient.setQueryData(['live-logs', runId], (old: any) => {
-            const newLogs = [...(old || []), payload.new as LogEntry];
-            
-            // Auto-scroll to bottom if enabled
-            if (autoScroll && listRef.current) {
-              setTimeout(() => {
-                listRef.current?.scrollToItem(newLogs.length - 1, 'end');
-              }, 100);
-            }
-            
-            return newLogs;
-          });
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['logs', runId] });
         }
       )
       .subscribe();
@@ -112,59 +76,35 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isLive, runId, queryClient, autoScroll]);
+  }, [isLive, runId, queryClient]);
 
   // ── Filtering and Search ───────────────────────────────────────
-  const allLogs = isLive ? liveLogs : logs;
-
   const filteredLogs = useMemo(() => {
-    if (!allLogs) return [];
+    if (!logs) return [];
 
-    return allLogs.filter((log) => {
-      // Level filter
+    return logs.filter((log) => {
       if (levelFilter && log.level !== levelFilter) return false;
-
-      // Search filter
       if (searchQuery && !log.message.toLowerCase().includes(searchQuery.toLowerCase())) {
         return false;
       }
-
       return true;
     });
-  }, [allLogs, levelFilter, searchQuery]);
+  }, [logs, levelFilter, searchQuery]);
 
-  // ── Virtual List Row Renderer ──────────────────────────────────
-  const getItemSize = (index: number) => {
-    const log = filteredLogs[index];
-    const lineCount = Math.ceil(log.message.length / 80);
-    return Math.max(lineCount * 20 + 10, 30);  // Minimum 30px per row
-  };
+  // ── Auto-scroll to bottom when new logs arrive ─────────────────
+  useEffect(() => {
+    if (autoScroll && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [filteredLogs, autoScroll]);
 
-  const LogRow = ({ index, style }: { index: number; style: any }) => {
-    const log = filteredLogs[index];
-    
-    const levelColors: Record<string, string> = {
-      INFO: '#3b82f6',
-      WARNING: '#f59e0b',
-      ERROR: '#ef4444',
-      DEBUG: '#6b7280',
-    };
-
-    return (
-      <div style={style} className="log-row">
-        <span className="log-timestamp">
-          {new Date(log.created_at).toLocaleTimeString()}
-        </span>
-        <span
-          className="log-level"
-          style={{ color: levelColors[log.level] || '#fff' }}
-        >
-          [{log.level}]
-        </span>
-        <span className="log-step">[{log.step_name}]</span>
-        <span className="log-message">{log.message}</span>
-      </div>
-    );
+  // ── Level Colors ───────────────────────────────────────────────
+  const levelColors: Record<string, string> = {
+    INFO: '#3b82f6',
+    WARNING: '#f59e0b',
+    ERROR: '#ef4444',
+    DEBUG: '#6b7280',
+    SUCCESS: '#10b981',
   };
 
   // ── Export Logs ────────────────────────────────────────────────
@@ -172,7 +112,7 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
     const text = filteredLogs
       .map((l) => `[${l.level}] [${l.step_name}] ${l.message}`)
       .join('\n');
-    
+
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -225,54 +165,45 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
         </span>
       </div>
 
-      {/* Virtual Scrolling Log Area */}
-      <div className="log-area" style={{ height: '500px', width: '100%' }}>
+      {/* Scrollable Log Area */}
+      <div
+        ref={scrollRef}
+        className="log-area"
+        style={{
+          height: '400px',
+          overflowY: 'auto',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          lineHeight: '1.6',
+          padding: '8px 12px',
+        }}
+      >
         {isLoading ? (
-          <div className="loading" style={{ padding: 16 }}>Loading logs...</div>
+          <div style={{ padding: 16, color: '#888' }}>Loading logs...</div>
         ) : filteredLogs.length === 0 ? (
-          <div className="empty" style={{ padding: 16 }}>No logs found</div>
+          <div style={{ padding: 16, color: '#888' }}>No logs found</div>
         ) : (
-          <>
-            {/* @ts-ignore */}
-            <AutoSizer>
-              {({ height, width }: { height: number; width: number }) => {
-                const UntypedList = List as any;
-                return (
-                  <UntypedList
-                    ref={listRef as any}
-                    height={height}
-                    width={width}
-                    itemCount={filteredLogs.length}
-                    itemSize={getItemSize}
-                  >
-                    {LogRow}
-                  </UntypedList>
-                );
-              }}
-            </AutoSizer>
-          </>
+          filteredLogs.map((log) => (
+            <div key={log.id} className="log-row" style={{ display: 'flex', gap: '8px', padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <span className="log-timestamp" style={{ color: '#666', whiteSpace: 'nowrap', minWidth: '70px' }}>
+                {new Date(log.created_at).toLocaleTimeString()}
+              </span>
+              <span
+                className="log-level"
+                style={{ color: levelColors[log.level] || '#fff', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '60px' }}
+              >
+                [{log.level}]
+              </span>
+              <span className="log-step" style={{ color: '#888', whiteSpace: 'nowrap', minWidth: '90px' }}>
+                [{log.step_name}]
+              </span>
+              <span className="log-message" style={{ color: '#e0e0e0', wordBreak: 'break-word' }}>
+                {log.message}
+              </span>
+            </div>
+          ))
         )}
       </div>
-
-      {/* Pagination for Historical Logs */}
-      {!isLive && (
-        <div className="log-pagination">
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-            disabled={currentPage === 0}
-          >
-            Previous
-          </button>
-          <span>Page {currentPage + 1}</span>
-          <button
-            onClick={() => setCurrentPage((p) => p + 1)}
-            disabled={!logs || logs.length < PAGE_SIZE}
-          >
-            Next
-          </button>
-        </div>
-      )}
     </div>
   );
 }
-
