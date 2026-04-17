@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     batch_size: int = Field(default=50, ge=1, le=100)
     min_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
     backfill_start_date: str = Field(default="2025-10-01")
-    prompt_body_max_chars: int = Field(default=400, ge=100)
-    classifier_max_batch_tokens: int = Field(default=3000, ge=500)
+    prompt_body_max_chars: int = Field(default=600, ge=100)
+    classifier_max_batch_tokens: int = Field(default=8000, ge=500)
 
     # ── Classifier ────────────────────────────────────────
     classifier_provider: str = Field(default="gemini") # "gemini" | "openai"

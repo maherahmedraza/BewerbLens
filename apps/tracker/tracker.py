@@ -581,19 +581,29 @@ def insert_raw_email_with_user(client, user_id, email):
 
 
 def send_notification_for_user(user, **kwargs):
-    """Send Telegram notification using user's credentials."""
+    """Send Telegram notification using user's per-profile credentials (thread-safe)."""
     if not user.get("telegram_enabled"):
         return
 
-    import config
+    bot_token = user.get("telegram_bot_token")
+    chat_id = user.get("telegram_chat_id")
+    if not bot_token or not chat_id:
+        logger.warning("Telegram enabled for user but bot_token or chat_id is missing")
+        return
 
-    original_token = config.settings.telegram_bot_token
-    original_chat = config.settings.telegram_chat_id
+    from telegram_notifier import _build_message
+    import requests
+
+    text = _build_message(**kwargs)
+    if not text:
+        return
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
 
     try:
-        config.settings.telegram_bot_token = user.get("telegram_bot_token")
-        config.settings.telegram_chat_id = user.get("telegram_chat_id")
-        send_notification(**kwargs)
-    finally:
-        config.settings.telegram_bot_token = original_token
-        config.settings.telegram_chat_id = original_chat
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        logger.bind(company=kwargs.get("company_name")).info("Telegram notification sent (per-user)")
+    except Exception as error:
+        logger.bind(error=str(error)).error("Telegram notification failed for user")

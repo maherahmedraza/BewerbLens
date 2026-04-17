@@ -311,6 +311,19 @@ def upsert_application_fixed(
             import json
             current_history = json.loads(current_history)
         
+        # Deduplicate: skip if this email is already in history
+        existing_email_ids = {
+            entry.get("source_email_id") or entry.get("email_id")
+            for entry in current_history
+            if isinstance(entry, dict)
+        }
+        if email.email_id in existing_email_ids:
+            logger.debug(
+                f"⊘ Skipping duplicate email {email.email_id} for "
+                f"{classification.company_name} / {classification.job_title}"
+            )
+            return "updated"
+        
         current_history.append(status_update)
         
         # Update application

@@ -56,6 +56,57 @@ def _post_to_telegram(url: str, payload: dict) -> None:
     response.raise_for_status()
 
 
+def _build_message(
+    action: NotificationAction,
+    company_name: str,
+    job_title: str = "Not Specified",
+    platform: str = "Direct",
+    status: str = "Applied",
+    email_subject: str = "",
+    notes: str = "",
+    date_applied: str = "",
+) -> str | None:
+    """
+    Builds a Telegram-formatted notification message.
+    Returns the message text or None if the action is unknown.
+    """
+    emoji = STATUS_EMOJI.get(status, "📌")
+
+    safe_company = _escape_md(company_name)
+    safe_title = _escape_md(job_title)
+    safe_platform = _escape_md(platform)
+    safe_subject = _escape_md(email_subject[:80])
+    safe_notes = _escape_md(notes[:120])
+    safe_date = _escape_md(date_applied)
+
+    if action == NotificationAction.ADDED:
+        return (
+            f"{emoji} *New Application Tracked*\n"
+            f"🏢 *Company:* {safe_company}\n"
+            f"💼 *Role:* {safe_title}\n"
+            f"🔗 *Platform:* {safe_platform}\n"
+            f"📅 *Date:* {safe_date}\n"
+            f"📧 {safe_subject}"
+        )
+    elif action == NotificationAction.UPDATED:
+        return (
+            f"{emoji} *Status Update*\n"
+            f"🏢 *Company:* {safe_company}\n"
+            f"💼 *Role:* {safe_title}\n"
+            f"📋 *Update:* {safe_notes}"
+        )
+    elif action == NotificationAction.ERROR:
+        return (
+            f"⚠️ *Pipeline Error*\n"
+            f"📛 *Error:* {safe_company}\n"
+            f"🔍 *Detail:* {safe_title}\n"
+            f"🕐 *Time:* {_escape_md(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))}"
+        )
+
+    logger.warning(f"Unknown notification action: {action}")
+    return None
+
+
 def send_notification(
     action: NotificationAction,
     company_name: str,
@@ -67,7 +118,7 @@ def send_notification(
     date_applied: str = "",
 ) -> bool:
     """
-    Sends a notification via Telegram.
+    Sends a notification via Telegram using global config credentials.
     Only runs if telegram_enabled=True in config.
 
     action: NotificationAction enum (ADDED | UPDATED | ERROR).
@@ -80,43 +131,12 @@ def send_notification(
         logger.warning("Telegram enabled but bot_token or chat_id is missing")
         return False
 
-    emoji = STATUS_EMOJI.get(status, "📌")
-
-    # Escape all user-sourced strings before embedding in Markdown
-    safe_company = _escape_md(company_name)
-    safe_title = _escape_md(job_title)
-    safe_platform = _escape_md(platform)
-    safe_subject = _escape_md(email_subject[:80])
-    safe_notes = _escape_md(notes[:120])
-    safe_date = _escape_md(date_applied)
-
-    if action == NotificationAction.ADDED:
-        text = (
-            f"{emoji} *New Application Tracked*\n"
-            f"🏢 *Company:* {safe_company}\n"
-            f"💼 *Role:* {safe_title}\n"
-            f"🔗 *Platform:* {safe_platform}\n"
-            f"📅 *Date:* {safe_date}\n"
-            f"📧 {safe_subject}"
-        )
-    elif action == NotificationAction.UPDATED:
-        text = (
-            f"{emoji} *Status Update*\n"
-            f"🏢 *Company:* {safe_company}\n"
-            f"💼 *Role:* {safe_title}\n"
-            f"📋 *Update:* {safe_notes}"
-        )
-    elif action == NotificationAction.ERROR:
-        # Dedicated error template — fixes the misleading crash notification
-        # from scheduler.py (review issue — scheduler passed action="added" for errors)
-        text = (
-            f"⚠️ *Pipeline Error*\n"
-            f"📛 *Error:* {safe_company}\n"
-            f"🔍 *Detail:* {safe_title}\n"
-            f"🕐 *Time:* {_escape_md(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))}"
-        )
-    else:
-        logger.warning(f"Unknown notification action: {action}")
+    text = _build_message(
+        action=action, company_name=company_name, job_title=job_title,
+        platform=platform, status=status, email_subject=email_subject,
+        notes=notes, date_applied=date_applied,
+    )
+    if not text:
         return False
 
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"

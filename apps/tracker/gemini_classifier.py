@@ -159,7 +159,7 @@ class GeminiClassifier(EmailClassifier):
     def _generation_config(self) -> dict[str, Any]:
         return {
             "temperature": 0.05,
-            "max_output_tokens": 4096,
+            "max_output_tokens": 8192,
             "response_mime_type": "application/json",
             "response_json_schema": GeminiBatchResponse.model_json_schema(),
         }

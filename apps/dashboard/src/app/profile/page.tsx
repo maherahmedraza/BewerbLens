@@ -85,6 +85,16 @@ export default function ProfileSettingsPage() {
       }
 
       if (error) throw error;
+
+      // Always sync email from auth to ensure profile shows the real address
+      if (data && user.email && data.email !== user.email) {
+        await supabase
+          .from('user_profiles')
+          .update({ email: user.email })
+          .eq('id', user.id);
+        data.email = user.email;
+      }
+
       setProfile(data);
     } catch (error: any) {
       console.error('Failed to load profile:', error);
@@ -95,15 +105,26 @@ export default function ProfileSettingsPage() {
 
   async function loadFilters() {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data, error } = await supabase
         .from('email_filters')
         .select('*')
+        .eq('user_id', user.id)
         .order('priority', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        // Table may not exist yet — gracefully degrade
+        if (error.code === '42P01' || error.message?.includes('does not exist')) {
+          console.warn('email_filters table not found; filters disabled.');
+          return;
+        }
+        throw error;
+      }
       setFilters(data || []);
     } catch (error: any) {
-      console.error('Failed to load filters:', error);
+      console.error('Failed to load filters:', error?.message || error);
     }
   }
 
