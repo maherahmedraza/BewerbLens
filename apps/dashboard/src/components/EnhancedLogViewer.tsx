@@ -32,10 +32,11 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
   const scrollRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [levelFilter, setLevelFilter] = useState<string | null>(null);
+  const [stageFilter, setStageFilter] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
   // ── Fetch logs (works for both live and historical) ────────────
-  const { data: logs, isLoading } = useQuery({
+  const { data: logs, isLoading, error: fetchError } = useQuery({
     queryKey: ['logs', runId],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -84,12 +85,19 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
 
     return logs.filter((log) => {
       if (levelFilter && log.level !== levelFilter) return false;
+      if (stageFilter && log.step_name !== stageFilter) return false;
       if (searchQuery && !log.message.toLowerCase().includes(searchQuery.toLowerCase())) {
         return false;
       }
       return true;
     });
-  }, [logs, levelFilter, searchQuery]);
+  }, [logs, levelFilter, stageFilter, searchQuery]);
+
+  // ── Derive available stages for the filter ─────────────────────
+  const availableStages = useMemo(() => {
+    if (!logs) return [];
+    return [...new Set(logs.map((l) => l.step_name).filter(Boolean))];
+  }, [logs]);
 
   // ── Auto-scroll to bottom when new logs arrive ─────────────────
   useEffect(() => {
@@ -123,6 +131,17 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
   };
 
   // ── Render ─────────────────────────────────────────────────────
+  if (fetchError) {
+    return (
+      <div className="log-viewer-container">
+        <div style={{ padding: 16, color: '#ef4444' }}>
+          Failed to load logs: {fetchError instanceof Error ? fetchError.message : 'Unknown error'}. 
+          Check your authentication and Supabase connection.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="log-viewer-container">
       {/* Toolbar */}
@@ -146,6 +165,19 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
           <option value="ERROR">ERROR</option>
           <option value="DEBUG">DEBUG</option>
         </select>
+
+        {availableStages.length > 1 && (
+          <select
+            value={stageFilter || 'ALL'}
+            onChange={(e) => setStageFilter(e.target.value === 'ALL' ? null : e.target.value)}
+            className="log-filter"
+          >
+            <option value="ALL">All Stages</option>
+            {availableStages.map((stage) => (
+              <option key={stage} value={stage}>{stage}</option>
+            ))}
+          </select>
+        )}
 
         <label className="auto-scroll-toggle">
           <input

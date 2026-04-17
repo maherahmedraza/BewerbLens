@@ -5,18 +5,19 @@ import {
   PauseIcon,
   CheckCircleIcon, 
   XCircleIcon, 
-  ArrowPathIcon 
+  ArrowPathIcon,
+  DocumentTextIcon,
 } from "@heroicons/react/24/solid";
 import styles from "./PipelineMonitor.module.css";
 import { useCancelRun, usePipelineRuns, useRealtimePipeline, useResumeRun, useRerunStage, useTriggerRun } from "@/hooks/usePipeline";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { PipelineStep } from "@/lib/types";
+import type { PipelineRun, PipelineStep } from "@/lib/types";
 
 const supabase = createClient();
 
-export default function PipelineMonitor() {
+export default function PipelineMonitor({ onViewLogs }: { onViewLogs?: (run: PipelineRun) => void }) {
   // 1. Live Realtime Subscription
   useRealtimePipeline();
   
@@ -184,6 +185,16 @@ export default function PipelineMonitor() {
             >
               <PlayIcon className={styles.icon} />
               {resumeMutation.isPending ? "Resuming..." : "Resume Run"}
+            </button>
+          )}
+
+          {latestRun && onViewLogs && (
+            <button
+              onClick={() => onViewLogs(latestRun)}
+              className={styles.secondaryButton}
+            >
+              <DocumentTextIcon className={styles.icon} />
+              View Logs
             </button>
           )}
         </div>
