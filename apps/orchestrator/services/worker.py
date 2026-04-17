@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from loguru import logger
 
 from .supabase_client import supabase
-from .tracker import run_tracker_task
+from .tracker import PipelineCancelledError, run_tracker_task
 
 
 class SupabaseLogHandler:
@@ -96,11 +96,6 @@ def worker_loop(worker_id: str):
             started_at = datetime.now(timezone.utc)
 
             try:
-                # Actualizar progreso inicial de ingestion
-                if run_id:
-                    from supabase_service import update_pipeline_step
-                    update_pipeline_step(supabase, run_id, "ingestion", "running", progress=10)
-
                 success, result_stats = _execute_task(task)
 
                 # Calcular duración
@@ -147,14 +142,17 @@ def _finalize_run(
 ):
     """Finaliza el registro en pipeline_runs con estadísticas y duración."""
     try:
-        run_status = "success" if status == "done" else "failed"
+        if result_stats.get("cancelled"):
+            run_status = "cancelled"
+        else:
+            run_status = "success" if status == "done" else "failed"
         data = {
             "status": run_status,
             "ended_at": ended_at.isoformat(),
             "duration_ms": duration_ms,
             "summary_stats": result_stats or {},
         }
-        if status == "failed" and result_stats.get("error"):
+        if result_stats.get("error"):
             data["error_message"] = str(result_stats["error"])[:500]
 
         supabase.table("pipeline_runs").update(data).eq("id", run_id).execute()
@@ -162,6 +160,8 @@ def _finalize_run(
         # Mark failed step if pipeline crashed
         if run_status == "failed":
             _mark_failed_steps(run_id, result_stats.get("error", ""))
+        elif run_status == "cancelled":
+            _mark_cancelled_steps(run_id, result_stats.get("error", "Cancelled by user"))
     except Exception as e:
         logger.warning(f"Failed to finalize run {run_id}: {e}")
 
@@ -178,6 +178,21 @@ def _mark_failed_steps(run_id: str, error_msg: str):
                 update_pipeline_step(supabase, run_id, step["step_name"], new_status, message=msg)
     except Exception as e:
         logger.warning(f"Failed to mark steps for run {run_id}: {e}")
+
+
+def _mark_cancelled_steps(run_id: str, message: str):
+    """Mark pending steps as skipped when a run is cancelled."""
+    try:
+        from supabase_service import update_pipeline_step
+
+        res = supabase.table("pipeline_run_steps").select("step_name, status").eq("run_id", run_id).execute()
+        for step in (res.data or []):
+            if step["status"] == "pending":
+                update_pipeline_step(supabase, run_id, step["step_name"], "skipped", message="Skipped after cancellation")
+            elif step["status"] == "running":
+                update_pipeline_step(supabase, run_id, step["step_name"], "failed", message=message[:200])
+    except Exception as e:
+        logger.warning(f"Failed to mark cancelled steps for run {run_id}: {e}")
 
 
 def _heartbeat_loop(run_id: str, stop_event: threading.Event):
@@ -208,6 +223,9 @@ def _execute_task(task: dict) -> tuple[bool, dict]:
         else:
             logger.error(f"Unknown task type: {task_type}")
             return False, {"error": f"unknown_task_type: {task_type}"}
+    except PipelineCancelledError as e:
+        logger.warning(f"Execution cancelled: {str(e)}")
+        return False, {"cancelled": True, "error": str(e)}
     except Exception as e:
         logger.error(f"Execution error: {str(e)}")
         return False, {"error": str(e)}

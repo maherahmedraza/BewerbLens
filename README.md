@@ -56,29 +56,34 @@ graph TD
 | Component | Tech Stack | Purpose |
 |---|---|---|
 | **Orchestrator** | FastAPI, APScheduler | REST API, job scheduling, and worker management |
-| **Worker** | Python Threading | Background task execution (ingestion, analysis) |
-| **AI Tracker** | Python 3.11+, Gemini AI | Core logic for email ingestion & classification |
-| **Dashboard** | Next.js 16, React 19, Recharts | Real-time tracking UI & monitoring |
-| **Database** | Supabase (PostgreSQL) | Persistent storage, task queue, and logs |
+| **Worker** | Python Threading | Background task execution (claims tasks via `claim_next_task` RPC) |
+| **AI Tracker** | Python 3.11+, Gemini 3.1 Flash-Lite | Three-stage email ingestion, classification & persistence pipeline |
+| **Dashboard** | Next.js 16, React 19, Recharts, TanStack Query | Real-time tracking UI with Supabase Realtime subscriptions |
+| **Database** | Supabase (PostgreSQL) | Persistent storage, task queue, step tracking, RLS data isolation |
 
 ---
 
 ## Features
 
 ### System Orchestration
-- **Real-time Monitoring** — Track background task progress and logs directly from the dashboard.
-- **Smart Scheduling** — Configurable intervals for automated ingestion.
-- **Manual Triggers** — Start a sync or backfill on-demand via the UI or API.
-- **Multi-user Ready** — Data isolation and user-specific configurations.
+- **Real-time Monitoring** — Granular stage-level progress (Ingestion → Analysis → Persistence) shown live via Supabase Realtime.
+- **Smart Scheduling** — Configurable interval (1 h – 24 h) stored in `pipeline_config`; dynamically updated without restart.
+- **Pause / Resume** — Toggle the scheduler on/off from the dashboard without touching the server.
+- **Run Controls** — Stop an active run, resume a failed/cancelled run, or rerun ingestion/analysis/persistence from the UI.
+- **Manual Triggers** — Start a sync or backfill on-demand via the UI or API; returns immediately while execution continues asynchronously.
+- **Multi-user** — Full per-user data isolation via Row Level Security; each user supplies their own Gmail credentials and email filter rules.
 
 ### AI Pipeline
+- **Three-stage execution** — Ingestion, Analysis, and Persistence are tracked independently in `pipeline_run_steps` with per-step progress percentages.
 - **Incremental Checkpointing** — Only processes new emails since the last successful run.
-- **Gemini 1.5 Flash** — Native AI classification for high accuracy and speed.
-- **Fuzzy Matching** — Intelligently links status updates to existing applications even if names vary.
-- **Status Priority** — Logic to ensure terminal states (like Offer or Rejected) are preserved.
+- **Gemini 3.1 Flash-Lite** — Default economical classifier model, requested with Structured Outputs / JSON Schema for robust parsing.
+- **Fuzzy Matching** — Resolves company/job title naming inconsistencies across email threads and job portals.
+- **Status Priority** — Terminal states (Offer, Rejected) are never overwritten by later lower-priority emails.
+- **Zombie Detection** — Scheduler runs `HeartbeatMonitor` every 5 minutes to detect and kill stale runs.
+- **Retry & Graceful Degradation** — Exponential-backoff retries; partial successes are saved rather than discarded.
 
 ### Premium Dashboard
-- **Pipeline View** — Dedicated page to monitor execution history and logs.
+- **Pipeline View** — Stage-by-stage progress bars, execution history table, config panel (pause, interval, retention), and per-run log drawer.
 - **Analytics Hub** — Interactive charts for application trends and platform performance.
 - **Modern UI** — Glassmorphic design, dark mode support, and responsive layouts.
 
@@ -90,26 +95,35 @@ graph TD
 BewerbLens/
 ├── apps/                          # Core Applications
 │   ├── orchestrator/              # FastAPI Task Manager
-│   │   ├── main.py                # Entry point
-│   │   ├── routers/               # API Endpoints (runs, config)
-│   │   └── services/              # Worker & Scheduler logic
+│   │   ├── main.py                # Entry point (lifespan, CORS, routers)
+│   │   ├── routers/               # REST Endpoints (runs, config)
+│   │   └── services/              # Worker, Scheduler, TrackerService, Config
 │   │
 │   ├── tracker/                   # AI Processing Pipeline
-│   │   ├── tracker.py             # Main entry point for sync
-│   │   ├── gemini_classifier.py   # AI integration
-│   │   └── supabase_service.py    # DB interactions
+│   │   ├── tracker.py             # run_pipeline_multiuser() entry point
+│   │   ├── classifier_factory.py  # Pluggable classifier (Gemini / future)
+│   │   ├── classifier_base.py     # Abstract classifier interface
+│   │   ├── gemini_classifier.py   # Gemini 3.1 Flash-Lite implementation
+│   │   ├── fuzzy_matcher.py       # Company/job title deduplication
+│   │   ├── failure_handler.py     # Retry, zombie detection, StepExecutor
+│   │   ├── pipeline_logger.py     # Buffered DB log sink
+│   │   ├── pre_filter.py          # Per-user rule-based email filtering
+│   │   └── supabase_service.py    # DB operations (pipeline steps, heartbeat)
 │   │
-│   └── dashboard/                 # Next.js Frontend
-│       ├── src/app/               # App Router pages
-│       └── components/            # UI Components
+│   └── dashboard/                 # Next.js 16 Frontend
+│       ├── src/app/               # App Router pages (pipeline, analytics, …)
+│       ├── src/hooks/usePipeline.ts  # TanStack Query + Realtime hooks
+│       └── src/components/        # UI Components (charts, tables, logs)
+│
+├── db/
+│   └── migrations/                # Idempotent SQL migrations (run in order)
 │
 ├── docs/                          # Detailed Documentation
 │   ├── architecture.md            # System deep-dive
 │   ├── api.md                     # Orchestrator API spec
-│   └── deployment.md              # Setup & Hosting guides
+│   ├── deployment.md              # Setup & Hosting guides
+│   └── troubleshooting.md         # Common issues & fixes
 │
-├── scripts/                       # Infrastructure & Utils
-├── docker-compose.yml             # Local deployment
 └── README.md                      # This file
 ```
 
@@ -124,16 +138,27 @@ BewerbLens/
 ### 2. Environment Setup
 ```bash
 cp .env.example .env
-# Fill in your credentials
+# Fill in your credentials — see docs/deployment.md for the full variable list
 ```
 
-### 3. Start Backend Services
+### 3. Apply Database Migrations
+Run in order against your Supabase project:
+```bash
+psql "$DATABASE_URL" -f db/migrations/001_multiuser_foundation.sql
+psql "$DATABASE_URL" -f db/migrations/002_hotfix_rls_policies.sql
+psql "$DATABASE_URL" -f db/migrations/003_views_and_rls.sql
+psql "$DATABASE_URL" -f db/migrations/004_application_stats_view.sql
+psql "$DATABASE_URL" -f db/migrations/005_enable_realtime.sql
+```
+
+### 4. Start Backend Services
 ```bash
 cd apps/orchestrator
-python main.py
+pip install -e ../tracker   # install tracker as a package
+python main.py              # FastAPI on port 8000
 ```
 
-### 4. Start Dashboard
+### 5. Start Dashboard
 ```bash
 cd apps/dashboard
 npm install && npm run dev

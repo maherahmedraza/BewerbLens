@@ -30,6 +30,7 @@ env/
 
 # ── Node.js / Next.js ─────────────────────────────────────
 node_modules/
+node_bin/
 .next/
 out/
 *.tsbuildinfo

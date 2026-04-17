@@ -2,29 +2,40 @@
 
 import { 
   PlayIcon, 
+  PauseIcon,
   CheckCircleIcon, 
   XCircleIcon, 
   ArrowPathIcon 
 } from "@heroicons/react/24/solid";
 import styles from "./PipelineMonitor.module.css";
-import { usePipelineRuns, useTriggerRun, useRealtimePipeline } from "@/hooks/usePipeline";
+import { useCancelRun, usePipelineRuns, useRealtimePipeline, useResumeRun, useRerunStage, useTriggerRun } from "@/hooks/usePipeline";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import type { PipelineStep } from "@/lib/types";
+
+const supabase = createClient();
 
 export default function PipelineMonitor() {
-  const supabase = createClient();
   // 1. Live Realtime Subscription
   useRealtimePipeline();
   
   const queryClient = useQueryClient();
 
   // 2. Data Fetching
-  const { data: runs, isLoading } = usePipelineRuns(1);
+  const { data: runs } = usePipelineRuns(1);
   const triggerMutation = useTriggerRun();
+  const cancelMutation = useCancelRun();
+  const resumeMutation = useResumeRun();
+  const rerunStageMutation = useRerunStage();
   
   const latestRun = runs?.[0];
-  const isRunning = latestRun?.status === 'running' || latestRun?.status === 'pending' || triggerMutation.isPending;
+  const isRunning =
+    latestRun?.status === 'running' ||
+    latestRun?.status === 'pending' ||
+    latestRun?.status === 'cancelling' ||
+    triggerMutation.isPending ||
+    cancelMutation.isPending;
 
   // 3. Fetch Steps for the latest run (polls every 2s while running)
   const { data: steps } = useQuery({
@@ -35,7 +46,7 @@ export default function PipelineMonitor() {
         .from('pipeline_run_steps')
         .select('*')
         .eq('run_id', latestRun.id);
-      return data || [];
+      return (data || []) as PipelineStep[];
     },
     enabled: !!latestRun?.id,
     refetchInterval: isRunning ? 2000 : false,
@@ -56,7 +67,7 @@ export default function PipelineMonitor() {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [latestRun?.id]);
+  }, [latestRun?.id, queryClient]);
 
   const handleSync = async () => {
     try {
@@ -66,16 +77,33 @@ export default function PipelineMonitor() {
     }
   };
 
+  const handleCancel = async () => {
+    if (!latestRun?.id) return;
+    await cancelMutation.mutateAsync(latestRun.id);
+  };
+
+  const handleResume = async () => {
+    if (!latestRun?.id) return;
+    await resumeMutation.mutateAsync(latestRun.id);
+  };
+
+  const handleRerunStage = async (stage: PipelineStep["step_name"]) => {
+    if (!latestRun?.id) return;
+    await rerunStageMutation.mutateAsync({ runId: latestRun.id, stage });
+  };
+
   const getStageStatus = (stage: string) => {
     if (!latestRun) return "pending";
     if (latestRun.status === 'success') return "success";
+    if (latestRun.status === 'cancelled') return "cancelled";
     
     // Use per-step data when available (even for failed runs)
-    const step = steps?.find((s: any) => s.step_name === stage);
+    const step = steps?.find((value) => value.step_name === stage);
     if (step) {
       if (step.status === 'success') return "success";
       if (step.status === 'running') return "active";
       if (step.status === 'failed') return "error";
+      if (step.status === 'skipped') return "skipped";
     }
     
     return "pending";
@@ -85,6 +113,7 @@ export default function PipelineMonitor() {
     if (!latestRun) return 0;
     if (latestRun.status === 'success') return 100;
     if (latestRun.status === 'failed') return 100;
+    if (latestRun.status === 'cancelled') return 100;
     
     if (!steps || steps.length === 0) return 0;
     
@@ -96,7 +125,7 @@ export default function PipelineMonitor() {
       'persistence': 34
     };
 
-    steps.forEach((step: any) => {
+    steps.forEach((step) => {
       const weight = stageWeights[step.step_name] || 0;
       if (step.status === 'success') {
         totalProgress += weight;
@@ -117,22 +146,47 @@ export default function PipelineMonitor() {
           <div className={`${styles.pulse} ${isRunning ? styles.active : ""}`} />
           <span className={styles.statusText}>
             {isRunning ? `Syncing (${progress}%)` 
+              : latestRun?.status === 'cancelled' ? "Last Run Cancelled"
               : latestRun?.status === 'failed' ? "Last Run Failed" 
               : "System Idle"}
           </span>
         </div>
-        <button 
-          onClick={handleSync} 
-          disabled={isRunning || triggerMutation.isPending}
-          className={`${styles.syncButton} ${isRunning ? styles.loading : ""}`}
-        >
-          {isRunning || triggerMutation.isPending ? (
-            <ArrowPathIcon className={styles.spinIcon} />
-          ) : (
-            <PlayIcon className={styles.icon} />
+        <div className={styles.buttonGroup}>
+          <button 
+            onClick={handleSync} 
+            disabled={isRunning || triggerMutation.isPending}
+            className={`${styles.syncButton} ${isRunning ? styles.loading : ""}`}
+          >
+            {isRunning || triggerMutation.isPending ? (
+              <ArrowPathIcon className={styles.spinIcon} />
+            ) : (
+              <PlayIcon className={styles.icon} />
+            )}
+            {isRunning || triggerMutation.isPending ? "Syncing..." : "Manual Sync"}
+          </button>
+
+          {latestRun && (latestRun.status === 'running' || latestRun.status === 'pending') && (
+            <button
+              onClick={handleCancel}
+              disabled={cancelMutation.isPending}
+              className={styles.secondaryButton}
+            >
+              <PauseIcon className={styles.icon} />
+              {cancelMutation.isPending ? "Stopping..." : "Stop Run"}
+            </button>
           )}
-          {isRunning || triggerMutation.isPending ? "Syncing..." : "Manual Sync"}
-        </button>
+
+          {latestRun && ['failed', 'cancelled'].includes(latestRun.status) && (
+            <button
+              onClick={handleResume}
+              disabled={resumeMutation.isPending}
+              className={styles.secondaryButton}
+            >
+              <PlayIcon className={styles.icon} />
+              {resumeMutation.isPending ? "Resuming..." : "Resume Run"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className={styles.progressContainer}>
@@ -152,26 +206,46 @@ export default function PipelineMonitor() {
           title="Ingestion" 
           status={getStageStatus("ingestion")} 
           description="Fetching Gmail data"
-          step={steps?.find((s: any) => s.step_name === 'ingestion')}
+          step={steps?.find((value) => value.step_name === 'ingestion')}
+          onRerun={() => handleRerunStage('ingestion')}
+          canRerun={Boolean(latestRun?.id) && !isRunning}
         />
         <StageItem 
           title="Analysis" 
           status={getStageStatus("analysis")} 
           description="Gemini LLM Processing"
-          step={steps?.find((s: any) => s.step_name === 'analysis')}
+          step={steps?.find((value) => value.step_name === 'analysis')}
+          onRerun={() => handleRerunStage('analysis')}
+          canRerun={Boolean(latestRun?.id) && !isRunning}
         />
         <StageItem 
           title="Persistence" 
           status={getStageStatus("persistence")} 
           description="Supabase Synchronization"
-          step={steps?.find((s: any) => s.step_name === 'persistence')}
+          step={steps?.find((value) => value.step_name === 'persistence')}
+          onRerun={() => handleRerunStage('persistence')}
+          canRerun={Boolean(latestRun?.id) && !isRunning}
         />
       </div>
     </div>
   );
 }
 
-function StageItem({ title, status, description, step }: { title: string; status: string; description: string; step?: any }) {
+function StageItem({
+  title,
+  status,
+  description,
+  step,
+  onRerun,
+  canRerun,
+}: {
+  title: string;
+  status: string;
+  description: string;
+  step?: PipelineStep;
+  onRerun: () => void;
+  canRerun: boolean;
+}) {
   const progressPct = step?.progress_pct || 0;
   const message = step?.message;
 
@@ -181,6 +255,7 @@ function StageItem({ title, status, description, step }: { title: string; status
         {status === "success" && <CheckCircleIcon className={styles.check} />}
         {status === "active" && <ArrowPathIcon className={styles.spin} />}
         {status === "error" && <XCircleIcon className={styles.errorIcon} />}
+        {status === "cancelled" && <PauseIcon className={styles.errorIcon} />}
         {status === "pending" && <div className={styles.dot} />}
       </div>
       <div className={styles.stageContent}>
@@ -191,6 +266,7 @@ function StageItem({ title, status, description, step }: { title: string; status
         </h4>
         <p className={styles.stageDesc}>
           {status === "error" && message ? message 
+            : status === "cancelled" && message ? message
             : status === "active" && message ? message 
             : description}
         </p>
@@ -198,6 +274,11 @@ function StageItem({ title, status, description, step }: { title: string; status
           <div className={styles.stageProgressTrack}>
             <div className={styles.stageProgressBar} style={{ width: `${progressPct}%` }} />
           </div>
+        )}
+        {canRerun && (
+          <button className={styles.rerunButton} onClick={onRerun}>
+            Rerun from {title}
+          </button>
         )}
       </div>
     </div>

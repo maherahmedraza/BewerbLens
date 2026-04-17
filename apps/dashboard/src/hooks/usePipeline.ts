@@ -2,8 +2,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import api from '@/lib/api';
+import type { PipelineRun, PipelineStep } from '@/lib/types';
 
 const supabase = createClient();
+
+type PipelineConfig = {
+  retention_days?: number;
+  schedule_interval_hours?: number;
+  is_paused?: boolean;
+};
 
 /**
  * Hook to fetch the global pipeline configuration.
@@ -27,12 +34,12 @@ export function usePipelineRuns(limit = 20) {
     queryKey: ['pipeline-runs', limit],
     queryFn: async () => {
       const { data } = await api.get(`/runs/history?limit=${limit}`);
-      return data;
+      return data as PipelineRun[];
     },
     refetchOnWindowFocus: true,
     refetchInterval: (query) => {
-      const runs = query.state.data as any[] | undefined;
-      const hasRunning = runs?.some((r: any) => r.status === 'running' || r.status === 'pending');
+      const runs = query.state.data as PipelineRun[] | undefined;
+      const hasRunning = runs?.some((run) => ['running', 'pending', 'cancelling'].includes(run.status));
       return hasRunning ? 3000 : false;
     },
   });
@@ -60,6 +67,44 @@ export function useTriggerRun() {
   });
 }
 
+function useRunActionMutation(action: 'cancel' | 'resume') {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (runId: string) => {
+      const { data } = await api.post(`/runs/${runId}/${action}`);
+      return data as PipelineRun;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-config'] });
+    },
+  });
+}
+
+export function useCancelRun() {
+  return useRunActionMutation('cancel');
+}
+
+export function useResumeRun() {
+  return useRunActionMutation('resume');
+}
+
+export function useRerunStage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: { runId: string; stage: PipelineStep['step_name'] }) => {
+      const { data } = await api.post(`/runs/${payload.runId}/rerun-stage`, { stage: payload.stage });
+      return data as PipelineRun;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-steps', variables.runId] });
+    },
+  });
+}
+
 /**
  * Hook to update the pipeline configuration with Optimistic UI updates.
  */
@@ -67,27 +112,27 @@ export function useUpdateConfig() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (patch: any) => {
+    mutationFn: async (patch: PipelineConfig) => {
       const { data } = await api.patch('/config/', patch);
-      return data;
+      return data as PipelineConfig;
     },
-    onMutate: async (newConfig) => {
+    onMutate: async (newConfig: PipelineConfig) => {
       // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
       await queryClient.cancelQueries({ queryKey: ['pipeline-config'] });
 
       // Snapshot the previous value
-      const previousConfig = queryClient.getQueryData(['pipeline-config']);
+      const previousConfig = queryClient.getQueryData<PipelineConfig>(['pipeline-config']);
 
       // Optimistically update to the new value
-      queryClient.setQueryData(['pipeline-config'], (old: any) => ({
-        ...old,
+      queryClient.setQueryData<PipelineConfig>(['pipeline-config'], (old) => ({
+        ...(old ?? {}),
         ...newConfig,
       }));
 
       // Return a context object with the snapshotted value
       return { previousConfig };
     },
-    onError: (err, newConfig, context) => {
+    onError: (_err, _newConfig, context) => {
       // If the mutation fails, use the context returned from onMutate to roll back
       queryClient.setQueryData(['pipeline-config'], context?.previousConfig);
     },
@@ -107,24 +152,13 @@ export function useRealtimePipeline() {
 
   useEffect(() => {
     // 1. Subscribe to pipeline_runs changes
-    const runsChannel = supabase
+      const runsChannel = supabase
       .channel('public:pipeline_runs')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'pipeline_runs' },
-        (payload) => {
-          const newRun = payload.new as any;
-          // Update the localized query cache without a full network refetch
-          queryClient.setQueryData(['pipeline-runs'], (old: any[] | undefined) => {
-            if (!old) return [newRun];
-            const index = old.findIndex((r: any) => r.id === newRun.id);
-            if (index > -1) {
-              const updated = [...old];
-              updated[index] = newRun;
-              return updated;
-            }
-            return [newRun, ...old];
-          });
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['pipeline-runs'] });
         }
       )
       .subscribe();

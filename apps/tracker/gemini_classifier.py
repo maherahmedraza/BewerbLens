@@ -12,7 +12,6 @@ import time
 from typing import Any
 
 from google import genai
-from google.genai import types
 from loguru import logger
 from pydantic import ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -28,7 +27,7 @@ from classifier_base import EmailClassifier
 
 # System prompt — optimized for performance and structure
 CLASSIFICATION_PROMPT = """You are a job application email classifier for a German job seeker.
-Classify each email into exactly one of 4 types. Return ONLY valid JSON.
+Classify each email into exactly one of 4 types. Return ONLY valid JSON that matches the provided response schema.
 
 TYPES:
 1. "application_confirmation" - Company confirmed receiving YOUR job application
@@ -47,8 +46,8 @@ EXTRACTION:
 EMAILS:
 {emails_text}
 
-JSON response array:
-[{{"email_index":1,"classification":"...","company_name":"...","job_title":"...","platform":"...","location":"...","job_listing_url":"","salary_range":"","confidence":0.9,"reasoning":"..."}}]"""
+JSON response object:
+{{"results":[{{"email_index":1,"classification":"...","company_name":"...","job_title":"...","platform":"...","location":"...","job_listing_url":"","salary_range":"","confidence":0.9,"reasoning":"..."}}]}}"""
 
 
 class GeminiClassifier(EmailClassifier):
@@ -157,6 +156,14 @@ class GeminiClassifier(EmailClassifier):
             f"Body: {body}"
         )
 
+    def _generation_config(self) -> dict[str, Any]:
+        return {
+            "temperature": 0.05,
+            "max_output_tokens": 4096,
+            "response_mime_type": "application/json",
+            "response_json_schema": GeminiBatchResponse.model_json_schema(),
+        }
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=4, max=60),
@@ -166,17 +173,14 @@ class GeminiClassifier(EmailClassifier):
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.05,
-                max_output_tokens=4096,
-                response_mime_type="application/json",
-            ),
+            config=self._generation_config(),
         )
         # Extraer texto ignorando "thinking" parts
         text = ""
         if response.candidates and response.candidates[0].content:
             for part in response.candidates[0].content.parts:
-                if hasattr(part, "thought") and part.thought: continue
+                if hasattr(part, "thought") and part.thought:
+                    continue
                 if part.text:
                     text = part.text
                     break
@@ -188,21 +192,42 @@ class GeminiClassifier(EmailClassifier):
         cleaned = re.sub(r"```json\s*", "", raw_text)
         cleaned = re.sub(r"```\s*", "", cleaned).strip()
         
+        # Robustness: find first '[' or '{' to ignore prefix text
+        match = re.search(r"(\[|\{)", cleaned)
+        if match:
+            cleaned = cleaned[match.start():]
+            # Also find last ']' or '}'
+            last_match = re.search(r"(\]|\})(?!.*(\]|\}))", cleaned, re.DOTALL)
+            if last_match:
+                cleaned = cleaned[:last_match.end()]
+
+        try:
+            batch_response = GeminiBatchResponse.model_validate_json(cleaned)
+            return batch_response.results
+        except ValidationError:
+            pass
+
         try:
             parsed = json.loads(cleaned)
-            # Manejar formato {"results": [...]} o [...]
-            if isinstance(parsed, dict) and "results" in parsed:
-                items = parsed["results"]
+            if isinstance(parsed, dict):
+                try:
+                    return GeminiBatchResponse.model_validate(parsed).results
+                except ValidationError:
+                    items = parsed.get("results")
             elif isinstance(parsed, list):
                 items = parsed
             else:
                 return []
-                
+
+            if not isinstance(items, list):
+                return []
+
             results = []
             for item in items:
                 try:
                     results.append(EmailClassification.model_validate(item))
-                except Exception: continue
+                except ValidationError:
+                    continue
             return results
         except Exception as e:
             logger.error(f"Fallo al parsear JSON de Gemini: {e}")

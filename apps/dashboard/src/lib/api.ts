@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { dashboardEnv } from './env';
 
 /**
  * Production-grade Axios instance for the BewerbLens Orchestrator API.
@@ -7,7 +8,7 @@ import axios from 'axios';
  * In production, it should point to your hosted orchestrator URL.
  */
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:8000',
+  baseURL: dashboardEnv.orchestratorUrl,
   headers: {
     'Content-Type': 'application/json',
   },

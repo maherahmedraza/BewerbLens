@@ -20,10 +20,12 @@ class Settings(BaseSettings):
     gmail_credentials_json: str | None = Field(default=None)
     gmail_token_json: str | None = Field(default=None)
     user_email: str = Field(default="")
+    gmail_oauth_redirect_uri: str = Field(default="http://localhost:3000/auth/gmail/callback")
+    encryption_key: str = Field(default="")
 
     # ── Gemini AI ──────────────────────────────────────────
     gemini_api_key: str = Field(default="")
-    gemini_model: str = Field(default="gemini-2.0-flash")
+    gemini_model: str = Field(default="gemini-3.1-flash-lite-preview")
 
     # ── Supabase ───────────────────────────────────────────
     supabase_url: str = Field(default="")

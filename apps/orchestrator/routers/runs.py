@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from datetime import date
 from typing import Optional
+
+from models import PipelineStage
 from services.tracker import tracker_service
 from services.supabase_client import supabase
 
@@ -16,6 +18,11 @@ class RunResponse(BaseModel):
     run_id: str
     id: str
     status: str
+    current_phase: Optional[str] = None
+
+
+class StageRerunRequest(BaseModel):
+    stage: PipelineStage
 
 @router.post("/trigger", response_model=RunResponse)
 async def trigger_run(payload: TriggerRequest):
@@ -33,6 +40,8 @@ async def trigger_run(payload: TriggerRequest):
             since_date=payload.since_date,
         )
         return run
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -50,6 +59,8 @@ async def get_history(limit: int = 20, offset: int = 0):
             .offset(offset)\
             .execute()
         return result.data
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -59,19 +70,52 @@ async def get_run_details(run_id: str):
     Fetches detailed metadata and log summaries for a specific run.
     """
     try:
-        # Check both by run_id (string label) and id (UUID)
-        query = supabase.table("pipeline_runs").select("*")
-        
-        # If it looks like a UUID, search by id, else search by run_id
-        if "-" in run_id and len(run_id) > 20: 
-            query = query.eq("id", run_id)
-        else:
-            query = query.eq("run_id", run_id)
+        import uuid
+        try:
+            uuid.UUID(run_id)
+            query = supabase.table("pipeline_runs").select("*").eq("id", run_id)
+        except ValueError:
+            query = supabase.table("pipeline_runs").select("*").eq("run_id", run_id)
             
         result = query.single().execute()
         
         if not result.data:
             raise HTTPException(status_code=404, detail="Run not found")
         return result.data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{run_id}/cancel", response_model=RunResponse)
+async def cancel_run(run_id: str):
+    """Request cancellation of a pending or active run."""
+    try:
+        return await tracker_service.cancel_run(run_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{run_id}/resume", response_model=RunResponse)
+async def resume_run(run_id: str):
+    """Resume a failed or cancelled run from the first incomplete stage."""
+    try:
+        return await tracker_service.resume_run(run_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{run_id}/rerun-stage", response_model=RunResponse)
+async def rerun_stage(run_id: str, payload: StageRerunRequest):
+    """Rerun a specific stage and all downstream stages for an existing run."""
+    try:
+        return await tracker_service.rerun_stage(run_id, payload.stage)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -37,6 +37,19 @@ class NotificationAction(str, Enum):
     ERROR = "error"
 
 
+class PipelineStage(str, Enum):
+    INGESTION = "ingestion"
+    ANALYSIS = "analysis"
+    PERSISTENCE = "persistence"
+
+
+PIPELINE_STAGE_ORDER: tuple[PipelineStage, ...] = (
+    PipelineStage.INGESTION,
+    PipelineStage.ANALYSIS,
+    PipelineStage.PERSISTENCE,
+)
+
+
 CLASSIFICATION_TO_STATUS: dict[Classification, Optional[Status]] = {
     Classification.APPLICATION_CONFIRMATION: Status.APPLIED,
     Classification.REJECTION: Status.REJECTED,
@@ -72,6 +85,27 @@ class EmailClassification(BaseModel):
 
 class GeminiBatchResponse(BaseModel):
     results: list[EmailClassification]
+
+
+class IngestionStageStats(BaseModel):
+    email_ids: list[str] = Field(default_factory=list)
+    total_fetched: int = 0
+    total_recovered: int = 0
+    total_after_filters: int = 0
+
+
+class AnalysisStageStats(BaseModel):
+    email_ids: list[str] = Field(default_factory=list)
+    classifications: list[EmailClassification] = Field(default_factory=list)
+    total_classified: int = 0
+
+
+class PersistenceStageStats(BaseModel):
+    email_ids: list[str] = Field(default_factory=list)
+    added: int = 0
+    updated: int = 0
+    skipped: int = 0
+    errors: int = 0
 
 
 class EmailMetadata(BaseModel):

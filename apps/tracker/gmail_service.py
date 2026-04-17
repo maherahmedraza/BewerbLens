@@ -22,6 +22,7 @@ from googleapiclient.discovery import build
 from loguru import logger
 from cryptography.fernet import Fernet
 
+from config import settings
 from models import EmailMetadata
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
@@ -47,7 +48,7 @@ JOB_KEYWORDS = [
 
 def _get_cipher():
     """Get Fernet cipher using ENCRYPTION_KEY from environment."""
-    key = os.getenv('ENCRYPTION_KEY')
+    key = settings.encryption_key
     if not key:
         logger.warning("ENCRYPTION_KEY not found in environment. Credentials will be stored in PLAIN TEXT!")
         return None
@@ -134,7 +135,7 @@ def get_gmail_service_for_user(user_profile: Dict, db_client=None):
             # Fall through to fallback
 
     # ═══ Strategy 2: Environment Variable (Single-User Fallback) ═══
-    gmail_token_env = os.getenv('GMAIL_TOKEN_JSON') or os.getenv('GMAIL_TOKEN')
+    gmail_token_env = settings.gmail_token_json
     if gmail_token_env:
         logger.warning("Using env Gmail token (single-user mode)")
         try:
@@ -146,7 +147,7 @@ def get_gmail_service_for_user(user_profile: Dict, db_client=None):
                 with open(token_value, 'r') as f:
                     token_data = json.load(f)
             else:
-                raise ValueError(f"GMAIL_TOKEN is neither JSON nor a valid file path")
+                raise ValueError("GMAIL_TOKEN_JSON is neither JSON nor a valid file path")
 
             creds = _load_credentials_from_json(token_data, client=db_client, user_id=user_id)
             return build('gmail', 'v1', credentials=creds)
@@ -201,8 +202,8 @@ def _run_oauth_flow() -> Optional[Credentials]:
 
     Supports GMAIL_CREDENTIALS_JSON env var (inline JSON) or credentials.json file.
     """
-    creds_env = os.getenv('GMAIL_CREDENTIALS_JSON', '').strip().strip("'\"")
-    creds_file = 'credentials.json'
+    creds_env = (settings.gmail_credentials_json or "").strip().strip("'\"")
+    creds_file = settings.gmail_credentials_path
 
     try:
         if creds_env and creds_env.startswith('{'):
@@ -211,16 +212,16 @@ def _run_oauth_flow() -> Optional[Credentials]:
                 f.write(creds_env)
                 creds_file = f.name
         elif not os.path.exists(creds_file):
-            logger.error("Missing credentials.json and GMAIL_CREDENTIALS_JSON env var.")
+            logger.error("Missing credentials file and GMAIL_CREDENTIALS_JSON env var.")
             return None
 
         flow = InstalledAppFlow.from_client_secrets_file(creds_file, SCOPES)
         creds = flow.run_local_server(port=0)
 
-        with open('token.json', 'w') as token:
+        with open(settings.gmail_token_path, 'w') as token:
             token.write(creds.to_json())
 
-        logger.success("OAuth flow complete. Token saved to token.json")
+        logger.success(f"OAuth flow complete. Token saved to {settings.gmail_token_path}")
         return creds
 
     except Exception as e:
@@ -433,9 +434,9 @@ def handle_gmail_oauth_callback(code: str, user_id: str, client):
     """
     try:
         flow = InstalledAppFlow.from_client_secrets_file(
-            'credentials.json',
+            settings.gmail_credentials_path,
             scopes=SCOPES,
-            redirect_uri=os.getenv('GMAIL_OAUTH_REDIRECT_URI', 'http://localhost:3000/auth/gmail/callback')
+            redirect_uri=settings.gmail_oauth_redirect_uri,
         )
 
         flow.fetch_token(code=code)

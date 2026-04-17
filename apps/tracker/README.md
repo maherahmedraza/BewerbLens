@@ -26,19 +26,25 @@ Gmail API --> Pre-Filter --> Gemini AI --> Supabase (Postgres) --> Telegram
 
 ```
 apps/tracker/
-├── tracker.py            # Main pipeline orchestrator
-├── config.py             # Pydantic Settings (env vars)
-├── models.py             # Data models & enums
-├── gmail_service.py      # Gmail API connection
-├── pre_filter.py         # Rule-based email filtering
-├── gemini_classifier.py  # Gemini AI classification
-├── supabase_service.py   # Database operations & dedup
-├── telegram_notifier.py  # Notification service
-├── schema.sql            # Supabase database schema
-├── pyproject.toml        # Dependencies
-├── .env.example          # Env var template
-└── .github/workflows/
-    └── tracker.yml       # GitHub Actions cron job
+├── tracker.py              # run_pipeline_multiuser() — main entry point
+├── classifier_factory.py   # Selects classifier via CLASSIFIER_PROVIDER env var
+├── classifier_base.py      # Abstract EmailClassifier interface
+├── gemini_classifier.py    # Gemini 3.1 Flash-Lite implementation (Structured Outputs)
+├── fuzzy_matcher.py        # Company/job title deduplication (ApplicationMatcher)
+├── failure_handler.py      # Retry (@with_retry), HeartbeatMonitor, StepExecutor
+├── pipeline_logger.py      # Buffered PipelineLogger — batch DB log inserts
+├── pre_filter.py           # Per-user rule-based email filtering
+├── gmail_service.py        # Gmail API connection (per-user OAuth)
+├── supabase_service.py     # DB operations, step tracking, heartbeat
+├── telegram_notifier.py    # Telegram notification service
+├── models.py               # Data models & enums (EmailMetadata, Classification, …)
+├── config.py               # Pydantic Settings (env vars)
+├── pyproject.toml          # Package dependencies
+└── tests/                  # Pytest test suite
+    ├── test_pre_filter.py
+    ├── test_status_logic.py
+    ├── test_fuzzy_match.py
+    └── test_gemini_parser.py
 ```
 
 ## Setup

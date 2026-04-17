@@ -74,6 +74,42 @@ export interface ConversionFunnel {
   count: number;
 }
 
+export type PipelineRunStatus =
+  | "running"
+  | "pending"
+  | "success"
+  | "failed"
+  | "cancelling"
+  | "cancelled";
+
+export type PipelineStepStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "failed"
+  | "skipped";
+
+export interface PipelineRun {
+  id: string;
+  run_id: string;
+  status: PipelineRunStatus;
+  triggered_by: string;
+  started_at?: string;
+  ended_at?: string;
+  current_phase?: string;
+  duration_ms?: number;
+  error_message?: string;
+  summary_stats?: Record<string, number>;
+}
+
+export interface PipelineStep {
+  run_id: string;
+  step_name: "ingestion" | "analysis" | "persistence";
+  status: PipelineStepStatus;
+  progress_pct?: number;
+  message?: string;
+}
+
 export const STATUS_COLORS: Record<string, string> = {
   Pending: "#00a4e4",
   Rejected: "#e3120b",

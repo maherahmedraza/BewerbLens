@@ -4,18 +4,23 @@ import {
   CheckCircleIcon, 
   XCircleIcon, 
   ClockIcon, 
-  InformationCircleIcon 
+  InformationCircleIcon,
+  PauseIcon,
+  PlayIcon,
 } from "@heroicons/react/24/outline";
 import styles from "./ExecutionHistory.module.css";
-import { usePipelineRuns } from "@/hooks/usePipeline";
-import { formatDistanceToNow, format } from "date-fns";
+import { useCancelRun, usePipelineRuns, useResumeRun } from "@/hooks/usePipeline";
+import { formatDistanceToNow } from "date-fns";
+import type { PipelineRun } from "@/lib/types";
 
 interface ExecutionHistoryProps {
-  onViewLogs: (run: any) => void;
+  onViewLogs: (run: PipelineRun) => void;
 }
 
 export default function ExecutionHistory({ onViewLogs }: ExecutionHistoryProps) {
   const { data: runs, isLoading, error } = usePipelineRuns(20);
+  const cancelMutation = useCancelRun();
+  const resumeMutation = useResumeRun();
 
   if (isLoading) {
     return <div className={styles.loading}>Loading history...</div>;
@@ -46,7 +51,7 @@ export default function ExecutionHistory({ onViewLogs }: ExecutionHistoryProps) 
           </tr>
         </thead>
         <tbody>
-          {(runs || []).map((run: any) => (
+          {(runs || []).map((run: PipelineRun) => (
             <tr key={run.id || run.run_id}>
               <td className={styles.runId}>{run.run_id}</td>
               <td>
@@ -94,6 +99,24 @@ export default function ExecutionHistory({ onViewLogs }: ExecutionHistoryProps) 
                 >
                   <InformationCircleIcon className={styles.infoIcon} />
                 </button>
+                {(run.status === "running" || run.status === "pending") && (
+                  <button
+                    className={styles.inlineAction}
+                    onClick={() => cancelMutation.mutate(run.id)}
+                    title="Stop run"
+                  >
+                    <PauseIcon className={styles.infoIcon} />
+                  </button>
+                )}
+                {(run.status === "failed" || run.status === "cancelled") && (
+                  <button
+                    className={styles.inlineAction}
+                    onClick={() => resumeMutation.mutate(run.id)}
+                    title="Resume run"
+                  >
+                    <PlayIcon className={styles.infoIcon} />
+                  </button>
+                )}
               </td>
             </tr>
           ))}

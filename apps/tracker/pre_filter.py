@@ -60,8 +60,8 @@ def apply_user_filters(client, user_id: str, emails: List) -> Tuple[List, Filter
     logger.info(f"Applying {len(filters)} filters for user {user_id}")
     
     # Separate INCLUDE and EXCLUDE filters
-    include_filters = [f for f in filters if f['filter_type'] == 'include']
-    exclude_filters = [f for f in filters if f['filter_type'] == 'exclude']
+    include_filters = [f for f in filters if f['filter_type'].lower() == 'include']
+    exclude_filters = [f for f in filters if f['filter_type'].lower() == 'exclude']
     
     passed = []
     details = []
