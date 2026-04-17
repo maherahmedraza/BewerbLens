@@ -28,13 +28,26 @@ export function useCurrentConfig() {
 
 /**
  * Hook to fetch the execution history.
+ * Falls back to direct Supabase query if the orchestrator API is unreachable,
+ * ensuring logs remain accessible even when the backend is offline.
  */
 export function usePipelineRuns(limit = 20) {
   return useQuery({
     queryKey: ['pipeline-runs', limit],
     queryFn: async () => {
-      const { data } = await api.get(`/runs/history?limit=${limit}`);
-      return data as PipelineRun[];
+      try {
+        const { data } = await api.get(`/runs/history?limit=${limit}`);
+        return data as PipelineRun[];
+      } catch {
+        // Fallback: query Supabase directly so history/logs stay visible
+        const { data, error } = await supabase
+          .from('pipeline_runs')
+          .select('*')
+          .order('started_at', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return (data || []) as PipelineRun[];
+      }
     },
     refetchOnWindowFocus: true,
     refetchInterval: (query) => {

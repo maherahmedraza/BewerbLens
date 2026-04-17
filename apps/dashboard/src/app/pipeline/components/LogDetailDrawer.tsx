@@ -1,22 +1,17 @@
 "use client";
 
-import { XMarkIcon, CommandLineIcon, ClipboardIcon } from "@heroicons/react/24/outline";
+import { XMarkIcon, CommandLineIcon } from "@heroicons/react/24/outline";
 import styles from "./LogDetailDrawer.module.css";
 import EnhancedLogViewer from "@/components/EnhancedLogViewer";
+import type { PipelineRun } from "@/lib/types";
 
 interface LogDetailDrawerProps {
   onClose: () => void;
-  run: any;
+  run: PipelineRun;
 }
 
 export default function LogDetailDrawer({ onClose, run }: LogDetailDrawerProps) {
-  const copyToClipboard = () => {
-    // Basic fallback depending on EnhancedLogViewer's internal implementation
-    // The EnhancedLogViewer provides its own export button anyway
-    if (run?.logs_summary) {
-      navigator.clipboard.writeText(run.logs_summary);
-    }
-  };
+  const runUuid = run?.id;
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -70,10 +65,10 @@ export default function LogDetailDrawer({ onClose, run }: LogDetailDrawerProps) 
             <span>Real-time Log Stream</span>
           </div>
           <div style={{ padding: '16px', background: '#1a1a1a', borderRadius: '8px', border: '1px solid #333' }}>
-            {run?.id ? (
-              <EnhancedLogViewer runId={run.id} isLive={run.status === 'running'} />
+            {runUuid ? (
+              <EnhancedLogViewer runId={runUuid} isLive={run.status === 'running'} />
             ) : (
-              <div className={styles.emptyLogs}>Waiting for logs...</div>
+              <div className={styles.emptyLogs}>No run ID available — cannot load logs.</div>
             )}
           </div>
         </div>
