@@ -19,7 +19,16 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    const errorData = error.response?.data;
+    const errorMessage = error.message;
+    const url = error.config?.url;
+    console.error('API Error:', {
+      url,
+      status: error.response?.status,
+      data: errorData,
+      message: errorMessage,
+      error
+    });
     return Promise.reject(error);
   }
 );

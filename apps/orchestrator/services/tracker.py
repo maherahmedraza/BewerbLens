@@ -185,15 +185,24 @@ class TrackerService:
         client.table("pipeline_tasks").insert(task_data).execute()
 
     def _resolve_run(self, client, run_identifier: str) -> dict:
+        logger.debug(f"Resolving run: {run_identifier}")
         try:
             uuid.UUID(run_identifier)
+            logger.debug("Identifier is UUID")
             query = client.table("pipeline_runs").select("*").eq("id", run_identifier)
         except ValueError:
+            logger.debug("Identifier is Label")
             query = client.table("pipeline_runs").select("*").eq("run_id", run_identifier)
 
         result = query.limit(1).execute()
         if not result.data:
-            raise RuntimeError("Run not found.")
+            logger.error(f"Run not found in DB: {run_identifier}")
+            # Try a broad search for debugging
+            all_recent = client.table("pipeline_runs").select("id, run_id").limit(5).execute()
+            logger.debug(f"Recent runs in DB: {all_recent.data}")
+            raise RuntimeError(f"Run not found: {run_identifier}")
+        
+        logger.debug(f"Run resolved: {result.data[0]['id']}")
         return result.data[0]
 
     def _detect_resume_stage(self, client, run_id: str) -> PipelineStage:

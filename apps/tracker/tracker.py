@@ -211,6 +211,10 @@ def _run_ingestion_stage(
         )
         return stage_stats
 
+    # Capture all email IDs BEFORE filtering so we can mark filtered-out
+    # recovery emails as processed (prevents them from re-appearing every run)
+    all_email_ids_before_filter = [email.email_id for email in new_emails]
+
     new_emails, filter_stats = apply_user_filters(client, user_id, new_emails)
     log_to_db(
         client,
@@ -219,6 +223,20 @@ def _run_ingestion_stage(
         f"Filtered: {filter_stats.passed}/{filter_stats.total} emails passed user filters",
         PipelineStage.INGESTION.value,
     )
+
+    # Mark filtered-out emails as processed so they don't loop in recovery
+    if filter_stats.filtered > 0:
+        passed_ids = {email.email_id for email in new_emails}
+        filtered_out_ids = [eid for eid in all_email_ids_before_filter if eid not in passed_ids]
+        if filtered_out_ids:
+            mark_raw_emails_processed(client, filtered_out_ids)
+            log_to_db(
+                client,
+                internal_id,
+                "INFO",
+                f"Marked {len(filtered_out_ids)} filtered-out emails as processed",
+                PipelineStage.INGESTION.value,
+            )
 
     for index, email in enumerate(new_emails):
         _ensure_run_not_cancelled(client, internal_id)

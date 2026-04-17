@@ -358,23 +358,52 @@ def upsert_application_fixed(
             "confidence": classification.confidence
         }
         
-        client.table("applications").insert({
-            "user_id": user_id,
-            "thread_id": email.thread_id,
-            "company_name": classification.company_name,
-            "job_title": classification.job_title,
-            "platform": classification.platform,
-            "status": status_value,
-            "confidence": classification.confidence,
-            "email_subject": email.subject,
-            "email_from": email.sender_email,
-            "date_applied": str(email.date),
-            "gmail_link": email.gmail_link,
-            "source_email_id": email.email_id,
-            "status_history": [initial_status],
-            "email_count": 1,
-            "is_active": True
-        }).execute()
+        try:
+            client.table("applications").insert({
+                "user_id": user_id,
+                "thread_id": email.thread_id,
+                "company_name": classification.company_name,
+                "job_title": classification.job_title,
+                "platform": classification.platform,
+                "status": status_value,
+                "confidence": classification.confidence,
+                "email_subject": email.subject,
+                "email_from": email.sender_email,
+                "date_applied": str(email.date),
+                "gmail_link": email.gmail_link,
+                "source_email_id": email.email_id,
+                "status_history": [initial_status],
+                "email_count": 1,
+                "is_active": True
+            }).execute()
+        except Exception as insert_error:
+            error_str = str(insert_error)
+            if "23505" in error_str or "duplicate key" in error_str:
+                # thread_id conflict: another application already uses this thread.
+                # Store without thread_id to avoid data loss.
+                logger.warning(
+                    f"⚠ thread_id conflict for {classification.company_name} / "
+                    f"{classification.job_title} — inserting without thread_id"
+                )
+                client.table("applications").insert({
+                    "user_id": user_id,
+                    "thread_id": None,
+                    "company_name": classification.company_name,
+                    "job_title": classification.job_title,
+                    "platform": classification.platform,
+                    "status": status_value,
+                    "confidence": classification.confidence,
+                    "email_subject": email.subject,
+                    "email_from": email.sender_email,
+                    "date_applied": str(email.date),
+                    "gmail_link": email.gmail_link,
+                    "source_email_id": email.email_id,
+                    "status_history": [initial_status],
+                    "email_count": 1,
+                    "is_active": True
+                }).execute()
+            else:
+                raise
         
         logger.info(
             f"✓ ADDED: {classification.company_name} / {classification.job_title}"

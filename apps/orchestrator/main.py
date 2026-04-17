@@ -20,6 +20,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
+logger.remove()
+logger.add(sys.stderr, level="DEBUG")
+
 # ── sys.path centralizado (Fix #N) ───────────────────────────
 # Todas las rutas al tracker se configuran AQUÍ y solo aquí.
 # Permite que services/tracker.py, services/supabase_client.py, etc.
