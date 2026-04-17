@@ -13,7 +13,8 @@
 import { useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 
-import { type Application, type StatusHistoryEntry as StatusUpdate } from "@/lib/types";
+import { type Application } from "@/lib/types";
+import { normalizeStatus, STATUS_COLORS } from "@/lib/status";
 
 interface ApplicationThreadCardProps {
   application: Application;
@@ -22,16 +23,8 @@ interface ApplicationThreadCardProps {
 export default function ApplicationThreadCard({ application }: ApplicationThreadCardProps) {
   const [expanded, setExpanded] = useState(false);
 
-  // ── Status Styling ─────────────────────────────────────────────
-  const statusColors: Record<string, string> = {
-    'Applied': '#3b82f6',
-    'Rejected': '#ef4444',
-    'Positive Response': '#10b981',
-    'Interview': '#f59e0b',
-    'Offer': '#8b5cf6',
-  };
-
-  const currentStatusColor = statusColors[application.status] || '#6b7280';
+  const displayStatus = normalizeStatus(application.status);
+  const currentStatusColor = STATUS_COLORS[displayStatus] || '#6b7280';
 
   // ── Timeline Rendering ─────────────────────────────────────────
   const renderTimeline = () => {
@@ -42,20 +35,20 @@ export default function ApplicationThreadCard({ application }: ApplicationThread
     return (
       <div className="timeline">
         {application.status_history.map((update, index) => {
-          const u = update as any;
-          const timestamp = u.timestamp || u.changed_at || u.date;
-          const source_email_id = u.source_email_id || u.email_id || `migration-${index}`;
-          const confidence = u.confidence ?? 0.8;
+          const entry = update as Record<string, unknown>;
+          const timestamp = (entry.timestamp || entry.changed_at || entry.date) as string | undefined;
+          const source_email_id = (entry.source_email_id || entry.email_id || `migration-${index}`) as string;
+          const confidence = (entry.confidence as number) ?? 0.8;
           
           return (
             <div key={source_email_id} className="timeline-item">
-              <div className="timeline-marker" style={{ backgroundColor: statusColors[update.status] }}>
+              <div className="timeline-marker" style={{ backgroundColor: STATUS_COLORS[normalizeStatus(update.status)] }}>
                 {index + 1}
               </div>
               <div className="timeline-content">
                 <div className="timeline-header">
-                  <span className="timeline-status" style={{ color: statusColors[update.status] }}>
-                    {update.status}
+                  <span className="timeline-status" style={{ color: STATUS_COLORS[normalizeStatus(update.status)] }}>
+                    {normalizeStatus(update.status)}
                   </span>
                   <span className="timeline-date">
                     {timestamp ? new Date(timestamp).toLocaleDateString("en-US") : "Unknown"}
@@ -90,7 +83,7 @@ export default function ApplicationThreadCard({ application }: ApplicationThread
         <div className="header-right">
           {/* Current Status Badge */}
           <div className="status-badge" style={{ backgroundColor: currentStatusColor }}>
-            {application.status}
+            {displayStatus}
           </div>
 
           {/* Email Count Badge (shows thread depth) */}
@@ -155,10 +148,11 @@ export function ApplicationStats({ applications }: ApplicationStatsProps) {
   // ✅ Count UNIQUE applications (not total rows)
   const uniqueCount = applications.filter(app => app.is_active).length;
 
-  // Count by current status
+  // Count by normalized status
   const statusCounts = applications.reduce((acc, app) => {
     if (!app.is_active) return acc;
-    acc[app.status] = (acc[app.status] || 0) + 1;
+    const status = normalizeStatus(app.status);
+    acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 

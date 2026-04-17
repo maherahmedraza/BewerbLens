@@ -293,11 +293,13 @@ def upsert_application_fixed(
         # ═══ UPDATE: Same job, append to history ═══
         display_status = CLASSIFICATION_TO_STATUS.get(classification.classification)
         if display_status is None:
-            display_status = str(classification.classification)
+            status_value = classification.classification.value
+        else:
+            status_value = display_status.value
 
         status_update = {
             "timestamp": str(email.date),
-            "status": str(display_status),
+            "status": status_value,
             "email_subject": email.subject,
             "source_email_id": email.email_id,
             "confidence": classification.confidence
@@ -313,12 +315,12 @@ def upsert_application_fixed(
         
         # Update application
         client.table("applications").update({
-            "status": str(display_status),
+            "status": status_value,
             "status_history": current_history,
             "email_count": len(current_history),
             "last_updated": "now()",
-            "email_subject": email.subject,  # Latest email subject
-            "source_email_id": email.email_id  # Latest email ID
+            "email_subject": email.subject,
+            "source_email_id": email.email_id
         }).eq("id", existing_app['id']).execute()
         
         logger.info(
@@ -331,11 +333,13 @@ def upsert_application_fixed(
         # ═══ CREATE: New job application ═══
         display_status = CLASSIFICATION_TO_STATUS.get(classification.classification)
         if display_status is None:
-            display_status = str(classification.classification)
+            status_value = classification.classification.value
+        else:
+            status_value = display_status.value
 
         initial_status = {
             "timestamp": str(email.date),
-            "status": str(display_status),
+            "status": status_value,
             "email_subject": email.subject,
             "source_email_id": email.email_id,
             "confidence": classification.confidence
@@ -347,7 +351,7 @@ def upsert_application_fixed(
             "company_name": classification.company_name,
             "job_title": classification.job_title,
             "platform": classification.platform,
-            "status": str(display_status),
+            "status": status_value,
             "confidence": classification.confidence,
             "email_subject": email.subject,
             "email_from": email.sender_email,
