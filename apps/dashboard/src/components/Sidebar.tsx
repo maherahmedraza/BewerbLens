@@ -56,9 +56,10 @@ export default function Sidebar() {
   }, [supabase]);
 
   // Close sidebar on route change (mobile)
-  useEffect(() => {
+  const prevPathname = useState(pathname)[0];
+  if (pathname !== prevPathname && mobileOpen) {
     setMobileOpen(false);
-  }, [pathname]);
+  }
 
   return (
     <>
@@ -107,7 +108,7 @@ export default function Sidebar() {
         </nav>
 
         <div className={styles.footer}>
-          <div className={styles.userSection}>
+          <Link href="/profile" className={styles.userSection}>
             <div className={styles.avatar}>
               {profile?.full_name?.charAt(0) || profile?.email?.charAt(0) || "?"}
             </div>
@@ -116,12 +117,12 @@ export default function Sidebar() {
                 <div className={styles.skeletonText} />
               ) : (
                 <>
-                  <p className={styles.userName}>{profile?.full_name || "User"}</p>
+                  <p className={styles.userName}>{profile?.full_name || profile?.email || "User"}</p>
                   <p className={styles.userRole}>{profile?.email}</p>
                 </>
               )}
             </div>
-          </div>
+          </Link>
         </div>
       </aside>
     </>

@@ -248,7 +248,12 @@ export default function ProfileSettingsPage() {
   }
 
   if (!profile) {
-    return <div className={styles.error}>Profile not found</div>;
+    return (
+      <div className={styles.error}>
+        <p>Could not load your profile. Please sign in and try again.</p>
+        <a href="/login" className={styles.loginLink}>Go to Login</a>
+      </div>
+    );
   }
 
   return (

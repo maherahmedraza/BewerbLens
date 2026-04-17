@@ -92,6 +92,14 @@
   gap: 12px;
   padding: 8px;
   border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: background-color 0.2s;
+  cursor: pointer;
+}
+
+.userSection:hover {
+  background-color: var(--sidebar-hover, rgba(255, 255, 255, 0.05));
 }
 
 .avatar {
