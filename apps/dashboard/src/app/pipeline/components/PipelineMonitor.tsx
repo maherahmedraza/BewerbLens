@@ -94,19 +94,19 @@ export default function PipelineMonitor({ onViewLogs }: { onViewLogs?: (run: Pip
   };
 
   const getStageStatus = (stage: string) => {
-    if (!latestRun) return "pending";
-    if (latestRun.status === 'success') return "success";
-    if (latestRun.status === 'cancelled') return "cancelled";
-    
-    // Use per-step data when available (even for failed runs)
+    // Always prefer per-step data when available
     const step = steps?.find((value) => value.step_name === stage);
     if (step) {
       if (step.status === 'success') return "success";
-      if (step.status === 'running') return "active";
+      if (step.status === 'running') return "running";
       if (step.status === 'failed') return "error";
       if (step.status === 'skipped') return "skipped";
     }
-    
+
+    if (!latestRun) return "pending";
+    if (latestRun.status === 'success') return "success";
+    if (latestRun.status === 'cancelled') return "cancelled";
+
     return "pending";
   };
 
@@ -264,24 +264,26 @@ function StageItem({
     <div className={`${styles.stage} ${styles[status]}`}>
       <div className={styles.stageIcon}>
         {status === "success" && <CheckCircleIcon className={styles.check} />}
-        {status === "active" && <ArrowPathIcon className={styles.spin} />}
+        {status === "running" && <ArrowPathIcon className={styles.spin} />}
         {status === "error" && <XCircleIcon className={styles.errorIcon} />}
         {status === "cancelled" && <PauseIcon className={styles.errorIcon} />}
+        {status === "skipped" && <span className={styles.skippedIcon}>⊘</span>}
         {status === "pending" && <div className={styles.dot} />}
       </div>
       <div className={styles.stageContent}>
         <h4 className={styles.stageTitle}>
           {title}
-          {status === "active" && <span className={styles.stagePct}>{progressPct}%</span>}
+          {status === "running" && <span className={styles.stagePct}>{progressPct}%</span>}
           {status === "success" && <span className={styles.stagePct}>100%</span>}
         </h4>
         <p className={styles.stageDesc}>
           {status === "error" && message ? message 
             : status === "cancelled" && message ? message
-            : status === "active" && message ? message 
+            : status === "skipped" && message ? message
+            : status === "running" && message ? message 
             : description}
         </p>
-        {status === "active" && (
+        {status === "running" && (
           <div className={styles.stageProgressTrack}>
             <div className={styles.stageProgressBar} style={{ width: `${progressPct}%` }} />
           </div>

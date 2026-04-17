@@ -431,16 +431,34 @@ def _set_current_phase(client, internal_id: Optional[str], stage: PipelineStage)
         logger.warning(f"Failed to update current_phase for run {internal_id}: {error}")
 
 
+_cancel_check_cache: dict[str, tuple[float, bool]] = {}  # run_id → (timestamp, is_cancelled)
+_CANCEL_CHECK_INTERVAL = 5.0  # seconds between DB queries
+
+
 def _ensure_run_not_cancelled(client, internal_id: Optional[str]) -> None:
     if not internal_id:
         return
+
+    import time
+
+    now = time.monotonic()
+    cached = _cancel_check_cache.get(internal_id)
+    if cached:
+        last_check, was_cancelled = cached
+        if was_cancelled:
+            raise PipelineCancelledError("Run cancelled by user.")
+        if now - last_check < _CANCEL_CHECK_INTERVAL:
+            return
 
     result = client.table("pipeline_runs").select("status").eq("id", internal_id).limit(1).execute()
     if not result.data:
         return
 
     status = result.data[0].get("status")
-    if status in {"cancelling", "cancelled"}:
+    is_cancelled = status in {"cancelling", "cancelled"}
+    _cancel_check_cache[internal_id] = (now, is_cancelled)
+
+    if is_cancelled:
         raise PipelineCancelledError("Run cancelled by user.")
 
 
