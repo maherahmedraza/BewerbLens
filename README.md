@@ -23,30 +23,48 @@ BewerbLens solves a universal problem for job seekers: **tracking applications s
 graph TD
     subgraph "External Services"
         Gmail[Gmail API]
-        Gemini[Gemini AI]
+        Gemini["Gemini 3.1 Flash-Lite<br/>(Structured Outputs)"]
         Telegram[Telegram Bot]
     end
 
-    subgraph "BewerbLens Backend"
-        Orchestrator[Orchestrator Service <br/> FastAPI]
-        Worker[Background Worker]
-        Tracker[AI Tracker Pipeline <br/> Python]
-        DB[(Supabase / Postgres)]
+    subgraph "User Interface"
+        Dashboard[Next.js 16 Dashboard]
+        AppTracker["Application Tracker<br/>(threaded view)"]
+        PipelineMon["Pipeline Monitor<br/>(stage progress + controls)"]
+        ProfilePage[Profile Page]
+        Analytics[Analytics Hub<br/>Recharts]
+        Dashboard --> AppTracker
+        Dashboard --> PipelineMon
+        Dashboard --> ProfilePage
+        Dashboard --> Analytics
     end
 
-    subgraph "BewerbLens Frontend"
-        Dashboard[Next.js Dashboard]
+    subgraph "API / Backend"
+        Orchestrator["Orchestrator<br/>FastAPI + APScheduler"]
+        Worker["Background Worker<br/>(claim_next_task RPC)"]
+        TrackerSvc["TrackerService<br/>(start / cancel / resume / rerun)"]
+        Orchestrator --> TrackerSvc
+        TrackerSvc --> Worker
     end
 
-    Gmail --> Tracker
-    Tracker --> Gemini
-    Tracker --> DB
-    Tracker --> Telegram
-    
-    Orchestrator --> Worker
-    Worker --> Tracker
-    Orchestrator --> DB
-    
+    subgraph "Pipeline Stages"
+        S1["Stage 1: Ingestion<br/>Gmail fetch + raw_emails"]
+        S2["Stage 2: Analysis<br/>Gemini classification"]
+        S3["Stage 3: Persistence<br/>fuzzy match + upsert"]
+        S1 --> S2 --> S3
+    end
+
+    subgraph "Data Layer"
+        DB[("Supabase / PostgreSQL")]
+        RLS["Row Level Security<br/>(per-user isolation)"]
+        DB --- RLS
+    end
+
+    Gmail --> S1
+    S2 --> Gemini
+    S3 --> Telegram
+    S1 & S2 & S3 --> DB
+    Worker --> S1
     Dashboard --> Orchestrator
     Dashboard --> DB
 ```
@@ -121,6 +139,7 @@ BewerbLens/
 ├── docs/                          # Detailed Documentation
 │   ├── architecture.md            # System deep-dive
 │   ├── api.md                     # Orchestrator API spec
+│   ├── pipeline.md                # Pipeline stages & re-run guide
 │   ├── deployment.md              # Setup & Hosting guides
 │   └── troubleshooting.md         # Common issues & fixes
 │
@@ -173,7 +192,9 @@ Visit `http://localhost:3000` to access the dashboard.
 For more detailed information, please refer to the files in the `docs/` folder:
 - [Architecture & Workflow](docs/architecture.md)
 - [API Documentation](docs/api.md)
+- [Pipeline Guide](docs/pipeline.md) — stages, re-run instructions, artifact persistence
 - [Deployment Guide](docs/deployment.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
 ---
 
