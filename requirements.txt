@@ -1,0 +1,18 @@
+# BewerbLens Python Backend — pinned dependencies
+# Used by: Dockerfile, DigitalOcean App Platform, GitHub Actions CI
+google-api-python-client>=2.130.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+google-genai>=1.0.0
+supabase>=2.6.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-dotenv>=1.0.1
+thefuzz[speedup]>=0.22.1
+loguru>=0.7.2
+requests>=2.31.0
+tenacity>=8.2.3
+fastapi>=0.111.0
+uvicorn>=0.30.0
+apscheduler>=3.10.4
+cryptography>=42.0.0
