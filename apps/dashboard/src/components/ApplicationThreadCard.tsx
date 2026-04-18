@@ -42,10 +42,10 @@ export default function ApplicationThreadCard({ application }: ApplicationThread
     return (
       <div className="timeline">
         {application.status_history.map((update, index) => {
-          const u = update as any;
+          const u = update as unknown as Record<string, unknown>;
           const timestamp = u.timestamp || u.changed_at || u.date;
           const source_email_id = u.source_email_id || u.email_id || `migration-${index}`;
-          const confidence = u.confidence ?? 0.8;
+          const confidence = (u.confidence ?? 0.8) as number;
           
           return (
             <div key={source_email_id} className="timeline-item">
