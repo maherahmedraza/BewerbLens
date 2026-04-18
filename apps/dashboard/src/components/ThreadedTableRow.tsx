@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Application } from "@/lib/types";
-import { normalizeStatus } from "@/lib/status";
+import { Application, StatusHistoryEntry } from "@/lib/types";
 import styles from "./ApplicationTable.module.css";
 import { 
   EnvelopeIcon, 
@@ -21,8 +20,7 @@ interface Props {
 
 export default function ThreadedTableRow({ app, statusMap }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const normalizedStatus = normalizeStatus(app.status);
-  const statusInfo = statusMap[normalizedStatus] || { label: normalizedStatus, color: "var(--text-muted)" };
+  const statusInfo = statusMap[app.status] || { label: app.status, color: "var(--text-muted)" };
   
   const history = app.status_history || [];
   const hasHistory = history.length > 1;
@@ -107,7 +105,7 @@ export default function ThreadedTableRow({ app, statusMap }: Props) {
             <div className={styles.historyContainer}>
               <div className={styles.timeline}>
                 {history.slice().reverse().map((entry, idx) => {
-                  const entryStatus = statusMap[normalizeStatus(entry.status)] || { label: normalizeStatus(entry.status), color: "var(--text-muted)" };
+                  const entryStatus = statusMap[entry.status] || { label: entry.status, color: "var(--text-muted)" };
                   return (
                     <div key={idx} className={styles.timelineItem}>
                       <div className={styles.timelineDot} style={{ backgroundColor: entryStatus.color }} />
@@ -118,7 +116,7 @@ export default function ThreadedTableRow({ app, statusMap }: Props) {
                             {entryStatus.label}
                           </span>
                           <span className={styles.timelineDate}>
-                            {new Date(entry.changed_at || entry.date).toLocaleDateString("en-US", {
+                            {new Date(entry.changed_at || entry.date || entry.timestamp).toLocaleDateString("en-US", {
                               month: "short",
                               day: "numeric",
                               hour: "2-digit",

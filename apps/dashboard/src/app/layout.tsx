@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "./v3-components.css";
@@ -32,7 +33,9 @@ export default function RootLayout({
             <div className="app-container">
               <Sidebar />
               <div className="main-content">
-                <Header />
+                <Suspense fallback={null}>
+                  <Header />
+                </Suspense>
                 <main className="page-container">{children}</main>
               </div>
             </div>
