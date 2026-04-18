@@ -106,6 +106,7 @@ class PersistenceStageStats(BaseModel):
     updated: int = 0
     skipped: int = 0
     errors: int = 0
+    report: Optional["PipelineRunReport"] = Field(default=None, exclude=True)
 
 
 class PipelineRunReport(BaseModel):

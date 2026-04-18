@@ -157,7 +157,7 @@ def run_pipeline_multiuser(
         )
 
         # ── Consolidated Telegram report ──────────────────────
-        if user.get("telegram_enabled") and hasattr(persistence_stats, "report"):
+        if user.get("telegram_enabled") and persistence_stats.report is not None:
             _send_consolidated_report(
                 user=user,
                 report=persistence_stats.report,
@@ -458,7 +458,7 @@ def _run_persistence_stage(
     report.errors = stage_stats.errors
 
     # Attach report to stage_stats for the caller to use
-    stage_stats.report = report  # type: ignore[attr-defined]
+    stage_stats.report = report
 
     mark_raw_emails_processed(client, ingestion_stats.email_ids)
     update_pipeline_step(
