@@ -187,7 +187,14 @@ def _run_ingestion_stage(
     run_id: str,
     internal_id: Optional[str],
 ) -> IngestionStageStats:
-    update_pipeline_step(client, run_id, PipelineStage.INGESTION.value, "running", progress=0, message="Starting email ingestion")
+    update_pipeline_step(
+        client,
+        run_id,
+        PipelineStage.INGESTION.value,
+        "running",
+        progress=0,
+        message="Starting email ingestion",
+    )
     log_to_db(client, internal_id, "INFO", "Starting email ingestion", PipelineStage.INGESTION.value)
 
     existing_ids_snapshot = get_existing_email_ids_for_user(client, user_id)
@@ -211,7 +218,13 @@ def _run_ingestion_stage(
         recovered_emails = [email for email in pending_emails if email.email_id not in new_ids]
         recovered_count = len(recovered_emails)
         if recovered_count:
-            log_to_db(client, internal_id, "INFO", f"Recovery: {recovered_count} pending", PipelineStage.INGESTION.value)
+            log_to_db(
+                client,
+                internal_id,
+                "INFO",
+                f"Recovery: {recovered_count} pending",
+                PipelineStage.INGESTION.value,
+            )
             new_emails.extend(recovered_emails)
 
     if not new_emails:
@@ -302,7 +315,14 @@ def _run_analysis_stage(client, user_id: str, run_id: str, internal_id: Optional
     if not emails:
         raise RuntimeError("Ingestion artifacts were found, but raw_emails could not be loaded.")
 
-    update_pipeline_step(client, run_id, PipelineStage.ANALYSIS.value, "running", progress=0, message="Classifying emails")
+    update_pipeline_step(
+        client,
+        run_id,
+        PipelineStage.ANALYSIS.value,
+        "running",
+        progress=0,
+        message="Classifying emails",
+    )
     log_to_db(client, internal_id, "INFO", f"Classifying {len(emails)} emails", PipelineStage.ANALYSIS.value)
 
     classifier = get_classifier()
@@ -354,7 +374,14 @@ def _run_persistence_stage(
     if not emails:
         raise RuntimeError("Failed to load raw email artifacts for persistence.")
 
-    update_pipeline_step(client, run_id, PipelineStage.PERSISTENCE.value, "running", progress=0, message="Saving results")
+    update_pipeline_step(
+        client,
+        run_id,
+        PipelineStage.PERSISTENCE.value,
+        "running",
+        progress=0,
+        message="Saving results",
+    )
     log_to_db(client, internal_id, "INFO", "Saving to database", PipelineStage.PERSISTENCE.value)
 
     apps_cache = client.table("applications").select("*").eq("user_id", user_id).execute().data

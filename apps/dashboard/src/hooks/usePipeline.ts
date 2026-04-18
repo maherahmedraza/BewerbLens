@@ -66,9 +66,27 @@ export function useTriggerRun() {
   
   return useMutation({
     mutationFn: async (payload: { since_date?: string; user_id?: string } = {}) => {
-      // Include user_id from current auth session
-      const { data: { user } } = await supabase.auth.getUser();
-      const fullPayload = { ...payload, user_id: user?.id };
+      // Prefer an explicit user_id, otherwise require an authenticated session.
+      let resolvedUserId = payload.user_id;
+
+      if (!resolvedUserId) {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) {
+          throw new Error(
+            `Unable to read the authenticated user. Restart the dashboard dev server so it reloads NEXT_PUBLIC_* values from the root .env. Supabase auth error: ${error.message}`
+          );
+        }
+
+        if (!user?.id) {
+          throw new Error(
+            'No authenticated user is available in the dashboard session. Restart the dashboard dev server so it reloads NEXT_PUBLIC_* values from the root .env, then sign in again.'
+          );
+        }
+
+        resolvedUserId = user.id;
+      }
+
+      const fullPayload = { ...payload, user_id: resolvedUserId };
       const { data } = await api.post('/runs/trigger', fullPayload);
       return data;
     },
@@ -192,5 +210,5 @@ export function useRealtimePipeline() {
       supabase.removeChannel(runsChannel);
       supabase.removeChannel(configChannel);
     };
-  }, [queryClient]);
+  }, [queryClient, supabase]);
 }

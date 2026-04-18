@@ -19,15 +19,19 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const errorData = error.response?.data;
-    const errorMessage = error.message;
-    const url = error.config?.url;
+    const isAxiosError = axios.isAxiosError(error);
+    const errorData = isAxiosError ? error.response?.data : undefined;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const url = isAxiosError ? error.config?.url : undefined;
     console.error('API Error:', {
+      baseURL: isAxiosError ? error.config?.baseURL : undefined,
+      code: isAxiosError ? error.code : undefined,
+      method: isAxiosError ? error.config?.method : undefined,
       url,
-      status: error.response?.status,
+      status: isAxiosError ? error.response?.status : undefined,
       data: errorData,
       message: errorMessage,
-      error
+      isAxiosError,
     });
     return Promise.reject(error);
   }

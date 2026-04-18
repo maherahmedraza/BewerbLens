@@ -1,0 +1,17 @@
+# BewerbLens — Root Ruff Configuration
+target-version = "py312"
+line-length = 120
+
+[lint]
+# Enable Pyflakes (F), Pycodestyle (E, W), and Isort (I)
+select = ["F", "E", "W", "I"]
+
+# Ignore line-too-long (E501) for now to allow CI to pass with pre-existing code
+# We should aim to fix these over time.
+ignore = ["E501"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

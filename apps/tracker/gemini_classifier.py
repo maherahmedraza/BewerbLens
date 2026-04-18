@@ -83,7 +83,7 @@ class GeminiClassifier(EmailClassifier):
 
         for batch_idx, batch in enumerate(batches):
             if batch_idx > 0:
-                time.sleep(2)  # Rate limiting básico
+                time.sleep(5)  # More conservative pacing for high demand periods
 
             emails_text = "\n\n---\n\n".join(
                 self._format_email(email, i) for i, email in enumerate(batch)
@@ -165,8 +165,8 @@ class GeminiClassifier(EmailClassifier):
         }
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=4, max=60),
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=2, min=10, max=120),
         reraise=True,
     )
     def _call_api(self, prompt: str) -> str:

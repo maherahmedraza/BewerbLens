@@ -25,6 +25,17 @@
   margin-bottom: 2.5rem;
 }
 
+.errorBanner {
+  margin: -1rem 0 1.5rem;
+  padding: 0.875rem 1rem;
+  border-radius: 0.875rem;
+  border: 1px solid var(--accent-red);
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--text-primary);
+  font-size: 0.925rem;
+  line-height: 1.5;
+}
+
 .progressTrack {
   width: 100%;
   height: 6px;

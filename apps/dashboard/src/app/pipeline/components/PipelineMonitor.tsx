@@ -31,6 +31,10 @@ export default function PipelineMonitor({ onViewLogs }: { onViewLogs?: (run: Pip
   const rerunStageMutation = useRerunStage();
   
   const latestRun = runs?.[0];
+  const triggerErrorMessage =
+    triggerMutation.error instanceof Error
+      ? triggerMutation.error.message
+      : null;
   const isRunning =
     latestRun?.status === 'running' ||
     latestRun?.status === 'pending' ||
@@ -68,7 +72,7 @@ export default function PipelineMonitor({ onViewLogs }: { onViewLogs?: (run: Pip
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [latestRun?.id, queryClient]);
+  }, [latestRun?.id, queryClient, supabase]);
 
   const handleSync = async () => {
     try {
@@ -211,6 +215,12 @@ export default function PipelineMonitor({ onViewLogs }: { onViewLogs?: (run: Pip
           />
         </div>
       </div>
+
+      {triggerErrorMessage && (
+        <div className={styles.errorBanner}>
+          {triggerErrorMessage}
+        </div>
+      )}
 
       <div className={styles.stagesGrid}>
         <StageItem 

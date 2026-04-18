@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     min_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
     backfill_start_date: str = Field(default="2025-10-01")
     prompt_body_max_chars: int = Field(default=600, ge=100)
-    classifier_max_batch_tokens: int = Field(default=8000, ge=500)
+    classifier_max_batch_tokens: int = Field(default=5000, ge=500)
 
     # ── Classifier ────────────────────────────────────────
     classifier_provider: str = Field(default="gemini") # "gemini" | "openai"

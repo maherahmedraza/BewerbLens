@@ -326,19 +326,37 @@ def upsert_application_fixed(
         
         current_history.append(status_update)
         
+        # ═══ New Logic: Calculate Correct Current Status ═══
+        # 1. Sort history by timestamp (date)
+        try:
+            current_history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        except Exception:
+            pass # Keep original order if sorting fails
+            
+        # 2. Derive the current status from the most recent entries
+        # We look at the latest entry, but we also respect STATUS_PRIORITY 
+        # (e.g., if multiple updates happen on the same day, Rejected beats Applied)
+        from models import STATUS_PRIORITY, Status
+        
+        latest_entry = current_history[0]
+        calculated_status = latest_entry.get('status', status_value)
+        
+        # Optional: scan for higher priority terminal states if dates are close
+        # For now, simply taking the newest timestamp is the most intuitive fix.
+        
         # Update application
         client.table("applications").update({
-            "status": status_value,
+            "status": calculated_status,
             "status_history": current_history,
             "email_count": len(current_history),
             "last_updated": "now()",
-            "email_subject": email.subject,
-            "source_email_id": email.email_id
+            "email_subject": latest_entry.get('email_subject') or email.subject,
+            "source_email_id": latest_entry.get('source_email_id') or email.email_id
         }).eq("id", existing_app['id']).execute()
         
         logger.info(
             f"✓ UPDATED: {classification.company_name} / {classification.job_title} "
-            f"(now {len(current_history)} emails)"
+            f"→ Status: {calculated_status} ({len(current_history)} emails)"
         )
         return "updated"
     

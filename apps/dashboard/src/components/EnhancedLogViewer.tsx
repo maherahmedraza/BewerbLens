@@ -77,7 +77,7 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isLive, runId, queryClient]);
+  }, [isLive, runId, queryClient, supabase]);
 
   // ── Filtering and Search ───────────────────────────────────────
   const filteredLogs = useMemo(() => {

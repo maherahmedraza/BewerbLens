@@ -42,9 +42,11 @@ ALTER TABLE pipeline_runs
     CHECK (duration_ms IS NULL OR duration_ms >= 0);
 
 -- 3. Fix any zombie runs that were stuck due to the old constraint
+-- Using the correct column: heartbeat_at
 UPDATE pipeline_runs
 SET status = 'failed',
+    is_zombie = true,
     error_message = COALESCE(error_message, 'Pipeline zombie-killed: recovered by migration 008'),
     ended_at = COALESCE(ended_at, now())
 WHERE status = 'running'
-  AND last_heartbeat < now() - interval '30 minutes';
+  AND heartbeat_at < now() - interval '30 minutes';
