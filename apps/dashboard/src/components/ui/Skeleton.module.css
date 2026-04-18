@@ -1,0 +1,22 @@
+.skeleton {
+  background: var(--bg-hover);
+  background: linear-gradient(
+    90deg, 
+    var(--bg-hover) 25%, 
+    var(--bg-card) 50%, 
+    var(--bg-hover) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

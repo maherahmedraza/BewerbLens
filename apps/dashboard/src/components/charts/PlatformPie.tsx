@@ -20,10 +20,10 @@ const COLORS = [
   "var(--chart-positive)",
   "var(--chart-offer)",
   "var(--accent-blue)",
-  "#6366f1",
-  "#a855f7",
-  "#f43f5e",
-  "#10b981",
+  "var(--accent-purple)",
+  "var(--chart-applied-light)",
+  "var(--chart-rejected)",
+  "var(--accent-green)",
 ];
 
 export default function PlatformPie({ data }: PlatformPieProps) {

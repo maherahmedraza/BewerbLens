@@ -16,6 +16,19 @@ export interface Application {
   location: string;
   salary_range: string;
   source_email_id: string;
+  status_history: StatusHistoryEntry[];
+  email_count: number;
+  is_active: boolean;
+}
+
+export interface StatusHistoryEntry {
+  status: string;
+  timestamp: string;
+  changed_at?: string;
+  date?: string;
+  email_subject: string;
+  source_email_id: string;
+  confidence: number;
 }
 
 export interface ApplicationStats {
@@ -61,6 +74,42 @@ export interface LocationBreakdown {
 export interface ConversionFunnel {
   stage: string;
   count: number;
+}
+
+export type PipelineRunStatus =
+  | "running"
+  | "pending"
+  | "success"
+  | "failed"
+  | "cancelling"
+  | "cancelled";
+
+export type PipelineStepStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "failed"
+  | "skipped";
+
+export interface PipelineRun {
+  id: string;
+  run_id: string;
+  status: PipelineRunStatus;
+  triggered_by: string;
+  started_at?: string;
+  ended_at?: string;
+  current_phase?: string;
+  duration_ms?: number;
+  error_message?: string;
+  summary_stats?: Record<string, number>;
+}
+
+export interface PipelineStep {
+  run_id: string;
+  step_name: "ingestion" | "analysis" | "persistence";
+  status: PipelineStepStatus;
+  progress_pct?: number;
+  message?: string;
 }
 
 export const STATUS_COLORS: Record<string, string> = {

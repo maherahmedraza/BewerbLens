@@ -17,6 +17,7 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+.kilo/
 
 # OS
 .DS_Store

@@ -1,5 +1,6 @@
-import { createServerClient, type CookieOptions } from "@supabase/ssr"
+import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { dashboardEnv } from "@/lib/env"
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
@@ -18,8 +19,8 @@ export async function proxy(request: NextRequest) {
   }
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    dashboardEnv.supabaseUrl,
+    dashboardEnv.supabaseAnonKey,
     {
       cookies: {
         getAll() {
@@ -40,12 +41,8 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Protect all routes except /login
+  // Protect all routes except /login and /auth/callback
   if (!user && request.nextUrl.pathname !== '/login') {
-    if (process.env.NODE_ENV === 'development') {
-      // Bypass auth in local development due to strict Supabase built-in SMTP limitations (3 emails/hour)
-      return response
-    }
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
@@ -60,12 +57,14 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
+     * Match all request paths except:
      * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
+     * - _next/image (image optimization)
+     * - favicon.ico
+     * - Static assets (svg, png, jpg, etc.)
+     * - /auth/callback (OAuth callback)
+     * - /api routes (backend APIs)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|auth/callback|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 }

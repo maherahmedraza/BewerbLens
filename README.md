@@ -13,48 +13,79 @@ BewerbLens solves a universal problem for job seekers: **tracking applications s
 3. **Stores** everything in Supabase with zero-duplicate guarantees
 4. **Notifies** you via Telegram when status changes occur
 5. **Visualizes** your entire job search on a Next.js dashboard with analytics
+6. **Orchestrates** background tasks with a dedicated worker and scheduler
 
 ---
 
 ## Architecture
 
-```
-┌─────────────┐     ┌──────────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
-│   Gmail API │────>│  Python Pipeline │────>│   Supabase   │────>│  Telegram   │────>│  Next.js     │
-│  (Ingest)   │     │  (AI Classify)   │     │  (Postgres)  │     │  (Notify)   │     │  Dashboard   │
-└─────────────┘     └──────────────────┘     └──────────────┘     └─────────────┘     └──────────────┘
+```mermaid
+graph TD
+    subgraph "External Services"
+        Gmail[Gmail API]
+        Gemini[Gemini AI]
+        Telegram[Telegram Bot]
+    end
+
+    subgraph "BewerbLens Backend"
+        Orchestrator[Orchestrator Service <br/> FastAPI]
+        Worker[Background Worker]
+        Tracker[AI Tracker Pipeline <br/> Python]
+        DB[(Supabase / Postgres)]
+    end
+
+    subgraph "BewerbLens Frontend"
+        Dashboard[Next.js Dashboard]
+    end
+
+    Gmail --> Tracker
+    Tracker --> Gemini
+    Tracker --> DB
+    Tracker --> Telegram
+    
+    Orchestrator --> Worker
+    Worker --> Tracker
+    Orchestrator --> DB
+    
+    Dashboard --> Orchestrator
+    Dashboard --> DB
 ```
 
 ### Components
 
 | Component | Tech Stack | Purpose |
 |---|---|---|
-| **BewerbLens Tracker** | Python 3.11+, Pydantic, Gemini AI | Automated email ingestion & classification |
-| **Dashboard** | Next.js 16, React 19, Recharts, Supabase SSR | Real-time application tracking UI |
-| **n8n Workflow** | n8n (Docker) | Original visual workflow (legacy reference) |
-| **Database** | Supabase (PostgreSQL) | Persistent storage with deduplication |
-| **Infrastructure** | Docker Compose | One-command local deployment |
+| **Orchestrator** | FastAPI, APScheduler | REST API, job scheduling, and worker management |
+| **Worker** | Python Threading | Background task execution (claims tasks via `claim_next_task` RPC) |
+| **AI Tracker** | Python 3.11+, Gemini 3.1 Flash-Lite | Three-stage email ingestion, classification & persistence pipeline |
+| **Dashboard** | Next.js 16, React 19, Recharts, TanStack Query | Real-time tracking UI with Supabase Realtime subscriptions |
+| **Database** | Supabase (PostgreSQL) | Persistent storage, task queue, step tracking, RLS data isolation |
 
 ---
 
 ## Features
 
-### BewerbLens Tracker
-- **Incremental checkpointing** — only processes new emails since last run
-- **Gemini AI classification** — detects Application, Rejection, Interview, Offer, and Positive Response
-- **Confidence scoring** — configurable threshold to filter uncertain classifications
-- **Native deduplication** — PostgreSQL `UNIQUE` constraints on `thread_id`
-- **Telegram notifications** — instant alerts for new applications and status changes
-- **GitHub Actions ready** — runs automatically on a cron schedule (free tier)
-- **Structured logging** — `loguru` with rotation, replacing n8n's debugging nightmare
+### System Orchestration
+- **Real-time Monitoring** — Granular stage-level progress (Ingestion → Analysis → Persistence) shown live via Supabase Realtime.
+- **Smart Scheduling** — Configurable interval (1 h – 24 h) stored in `pipeline_config`; dynamically updated without restart.
+- **Pause / Resume** — Toggle the scheduler on/off from the dashboard without touching the server.
+- **Run Controls** — Stop an active run, resume a failed/cancelled run, or rerun ingestion/analysis/persistence from the UI.
+- **Manual Triggers** — Start a sync or backfill on-demand via the UI or API; returns immediately while execution continues asynchronously.
+- **Multi-user** — Full per-user data isolation via Row Level Security; each user supplies their own Gmail credentials and email filter rules.
 
-### Dashboard
-- **Overview page** — stats cards with total applications, response rate, and success rate
-- **Applications table** — searchable, filterable list of all tracked applications
-- **Analytics page** — charts for platform breakdown, status distribution, and trends
-- **Dark/Light mode** — theme toggle with persistent preference
-- **Authentication** — Supabase Auth for secure access
-- **Settings page** — configuration management
+### AI Pipeline
+- **Three-stage execution** — Ingestion, Analysis, and Persistence are tracked independently in `pipeline_run_steps` with per-step progress percentages.
+- **Incremental Checkpointing** — Only processes new emails since the last successful run.
+- **Gemini 3.1 Flash-Lite** — Default economical classifier model, requested with Structured Outputs / JSON Schema for robust parsing.
+- **Fuzzy Matching** — Resolves company/job title naming inconsistencies across email threads and job portals.
+- **Status Priority** — Terminal states (Offer, Rejected) are never overwritten by later lower-priority emails.
+- **Zombie Detection** — Scheduler runs `HeartbeatMonitor` every 5 minutes to detect and kill stale runs.
+- **Retry & Graceful Degradation** — Exponential-backoff retries; partial successes are saved rather than discarded.
+
+### Premium Dashboard
+- **Pipeline View** — Stage-by-stage progress bars, execution history table, config panel (pause, interval, retention), and per-run log drawer.
+- **Analytics Hub** — Interactive charts for application trends and platform performance.
+- **Modern UI** — Glassmorphic design, dark mode support, and responsive layouts.
 
 ---
 
@@ -62,34 +93,37 @@ BewerbLens solves a universal problem for job seekers: **tracking applications s
 
 ```
 BewerbLens/
-├── apps/                          # Deployable Applications
-│   ├── tracker/                   # Python AI pipeline
-│   │   ├── tracker.py             # Main pipeline orchestrator
-│   │   ├── config.py              # Pydantic settings
-│   │   ├── models.py              # Data models & enums
-│   │   ├── gmail_service.py       # Gmail API connection
-│   │   ├── pyproject.toml         # Python dependencies
-│   │   └── ...
+├── apps/                          # Core Applications
+│   ├── orchestrator/              # FastAPI Task Manager
+│   │   ├── main.py                # Entry point (lifespan, CORS, routers)
+│   │   ├── routers/               # REST Endpoints (runs, config)
+│   │   └── services/              # Worker, Scheduler, TrackerService, Config
 │   │
-│   └── dashboard/                 # Next.js web application
-│       ├── src/
-│       │   ├── app/               # Next.js App Router pages
-│       │   ├── components/        # Reusable UI components
-│       │   └── lib/               # Utilities & Supabase client
-│       └── package.json
+│   ├── tracker/                   # AI Processing Pipeline
+│   │   ├── tracker.py             # run_pipeline_multiuser() entry point
+│   │   ├── classifier_factory.py  # Pluggable classifier (Gemini / future)
+│   │   ├── classifier_base.py     # Abstract classifier interface
+│   │   ├── gemini_classifier.py   # Gemini 3.1 Flash-Lite implementation
+│   │   ├── fuzzy_matcher.py       # Company/job title deduplication
+│   │   ├── failure_handler.py     # Retry, zombie detection, StepExecutor
+│   │   ├── pipeline_logger.py     # Buffered DB log sink
+│   │   ├── pre_filter.py          # Per-user rule-based email filtering
+│   │   └── supabase_service.py    # DB operations (pipeline steps, heartbeat)
+│   │
+│   └── dashboard/                 # Next.js 16 Frontend
+│       ├── src/app/               # App Router pages (pipeline, analytics, …)
+│       ├── src/hooks/usePipeline.ts  # TanStack Query + Realtime hooks
+│       └── src/components/        # UI Components (charts, tables, logs)
 │
-├── scripts/                       # Infrastructure & Configurations
-│   └── n8n/                       
-│       ├── workflows/             # Legacy & active n8n workflows
-│       └── backups/               # Automated workflow backups
+├── db/
+│   └── migrations/                # Idempotent SQL migrations (run in order)
 │
-├── .github/                       # Security & CI Configurations
-│   └── dependabot.yml             # Automatic dependency updates
+├── docs/                          # Detailed Documentation
+│   ├── architecture.md            # System deep-dive
+│   ├── api.md                     # Orchestrator API spec
+│   ├── deployment.md              # Setup & Hosting guides
+│   └── troubleshooting.md         # Common issues & fixes
 │
-├── .env.example                   # Universal environment template
-├── .gitattributes                 # Cross-platform normalizing
-├── .pre-commit-config.yaml        # Code formatting enforcement
-├── docker-compose.yml             # Local Docker infrastructure
 └── README.md                      # This file
 ```
 
@@ -97,135 +131,49 @@ BewerbLens/
 
 ## Quick Start
 
-### Prerequisites
+### 1. Prerequisites
+- Python 3.11+ & Node.js 18+
+- Supabase Project & Google Cloud Project (Gmail API + Gemini Key)
 
-- **Python 3.11+** (for BewerbLens Tracker)
-- **Node.js 18+** (for Dashboard)
-- **Docker & Docker Compose** (for n8n)
-- **Supabase account** (free tier works)
-- **Google Cloud project** with Gmail API enabled
-- **Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey)
-
-### 1. Configure the Environment
-We use a root-level template for all secrets.
+### 2. Environment Setup
 ```bash
 cp .env.example .env
-# Edit .env with your credentials (Supabase, Gemini, Postgres)
+# Fill in your credentials — see docs/deployment.md for the full variable list
 ```
 
-### 2. Set Up Database (Supabase)
-1. Create a project at [supabase.com](https://supabase.com)
-2. Run the schema migrations located in `apps/tracker/schema.sql` and `schema_v2.sql`.
-
-### 3. Run BewerbLens Tracker
+### 3. Apply Database Migrations
+Run in order against your Supabase project:
 ```bash
-cd apps/tracker
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-python tracker.py
+psql "$DATABASE_URL" -f db/migrations/001_multiuser_foundation.sql
+psql "$DATABASE_URL" -f db/migrations/002_hotfix_rls_policies.sql
+psql "$DATABASE_URL" -f db/migrations/003_views_and_rls.sql
+psql "$DATABASE_URL" -f db/migrations/004_application_stats_view.sql
+psql "$DATABASE_URL" -f db/migrations/005_enable_realtime.sql
 ```
 
-### 4. Run the Dashboard
+### 4. Start Backend Services
+```bash
+cd apps/orchestrator
+pip install -e ../tracker   # install tracker as a package
+python main.py              # FastAPI on port 8000
+```
+
+### 5. Start Dashboard
 ```bash
 cd apps/dashboard
-npm install
-npm run dev
+npm install && npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
-### 4. Run n8n (Optional)
-
-```bash
-docker compose up -d
-```
-
-Access n8n at [http://localhost:5678](http://localhost:5678). Import the workflow from `job_tracker_workflow_fixed.json`.
+Visit `http://localhost:3000` to access the dashboard.
 
 ---
 
-## How the Pipeline Works
+## Documentation
 
-```
-Step 1: Checkpoint ── Read last processed date from Supabase
-         │
-Step 2: Fetch ──────── Query Gmail API for emails since checkpoint
-         │
-Step 3: Bronze Ingest ─ Store raw emails for audit trail
-         │
-Step 4: Pre-Filter ──── Rule-based filtering (blocked senders, patterns)
-         │
-Step 5: Deduplicate ─── Compare thread_ids against existing database
-         │
-Step 6: Classify ────── Gemini AI classifies each new email
-         │
-Step 7: Upsert ──────── Insert or update in Supabase with status priority
-         │
-Step 8: Notify ──────── Send Telegram alert for new/updated applications
-         │
-Step 9: Log ─────────── Record processing details for auditing
-```
-
----
-
-## Deployment
-
-### GitHub Actions (Free)
-
-The tracker can run automatically every 4 hours on GitHub Actions:
-
-1. Push to a **private** GitHub repository
-2. Add these secrets in **Settings → Secrets and variables → Actions**:
-
-| Secret | Description |
-|---|---|
-| `GMAIL_CREDENTIALS_JSON` | Base64-encoded `credentials.json` |
-| `GMAIL_TOKEN_JSON` | Base64-encoded `token.json` |
-| `GEMINI_API_KEY` | Your Gemini API key |
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_KEY` | Supabase service_role key |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token (optional) |
-| `TELEGRAM_CHAT_ID` | Telegram chat ID (optional) |
-
-### Dashboard Deployment
-
-Deploy the Next.js dashboard to **Vercel** (recommended):
-
-```bash
-npx vercel
-```
-
-Or any platform supporting Next.js (Railway, Render, etc.).
-
----
-
-## Why Python Over n8n?
-
-| Problem in n8n | Solution in Python |
-|---|---|
-| 4 monthly Gmail API calls every run | Single incremental `after:` query |
-| In-memory cache lost on restart | Supabase `UNIQUE` constraint on `thread_id` |
-| ~255 Gemini batches on first run | Same batching, but with `tenacity` retries |
-| Fragile JSON parsing in Code nodes | Pydantic enforced schemas |
-| Visual debugging nightmare | Structured logging with `loguru` |
-| No persistent state | Postgres checkpoint (last processed date) |
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **Language** | Python 3.11+, TypeScript 5 |
-| **AI** | Google Gemini (3.1 Flash Lite / 3 Flash / 3.1 Pro) |
-| **Backend** | Supabase (PostgreSQL) |
-| **Frontend** | Next.js 16, React 19, Recharts 3 |
-| **Styling** | CSS Modules, next-themes |
-| **Auth** | Supabase Auth |
-| **Notifications** | Telegram Bot API |
-| **CI/CD** | GitHub Actions |
-| **Infrastructure** | Docker Compose, n8n |
+For more detailed information, please refer to the files in the `docs/` folder:
+- [Architecture & Workflow](docs/architecture.md)
+- [API Documentation](docs/api.md)
+- [Deployment Guide](docs/deployment.md)
 
 ---
 
@@ -238,7 +186,3 @@ MIT — See [LICENSE](LICENSE) for details.
 ## Author
 
 **Maher Ahmed Raza** — [GitHub](https://github.com/maherahmedraza)
-
----
-
-> *BewerbLens turns the chaos of job hunting into clarity. Every application tracked, every response captured, every opportunity visible.*

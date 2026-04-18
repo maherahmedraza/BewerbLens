@@ -46,9 +46,6 @@ export default async function StatsCards() {
               <div className={styles.iconWrapper} style={{ backgroundColor: `${card.color}15`, color: card.color }}>
                 <card.icon className={styles.icon} />
               </div>
-              <div className={styles.trend}>
-                <span className={styles.trendValue}>+12%</span>
-              </div>
             </div>
             <div className={styles.cardContent}>
               <div className={styles.value}>{card.value}</div>

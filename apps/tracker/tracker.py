@@ -1,265 +1,581 @@
-#!/usr/bin/env python3
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  BewerbLens — Main Pipeline                                   ║
-# ║  Orchestrates the entire flow: ingest → classify →           ║
-# ║  deduplicate → store → notify.                              ║
+# ║  COMPLETE Multi-User Tracker Integration                    ║
 # ║                                                             ║
-# ║  This file replaces the entire n8n canvas (~30 nodes)       ║
-# ║  with a linear pipeline of ~100 lines of logic.             ║
+# ║  This file replaces tracker.py with FULL multi-user support ║
+# ║  • Fetches Gmail credentials per user_id                    ║
+# ║  • Applies email filters per user_id                        ║
+# ║  • Writes applications with user_id                         ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-import sys
-from datetime import date, timedelta
+from datetime import date
+from typing import Optional
 
 from loguru import logger
 
-from config import settings
-from gemini_classifier import classify_emails
-from gmail_service import fetch_emails
-from models import CLASSIFICATION_TO_STATUS, ProcessingLog
-from pre_filter import apply_pre_filters
+from classifier_factory import get_classifier
+from fuzzy_matcher import ApplicationMatcher, upsert_application_fixed
+from gmail_service import fetch_emails_for_user, get_gmail_service_for_user
+from models import (
+    AnalysisStageStats,
+    CLASSIFICATION_TO_STATUS,
+    Classification,
+    EmailClassification,
+    EmailMetadata,
+    IngestionStageStats,
+    NotificationAction,
+    PersistenceStageStats,
+    PIPELINE_STAGE_ORDER,
+    PipelineStage,
+)
+from pre_filter import apply_user_filters
 from supabase_service import (
-    get_existing_thread_ids,
-    get_last_checkpoint,
-    insert_raw_email,
-    log_processing,
-    upsert_application,
     get_client,
+    mark_raw_emails_processed,
+    update_heartbeat,
+    update_pipeline_step,
 )
 from telegram_notifier import send_notification
 
-# ── Configure logging with loguru ────────────────────────────
-# Clean, structured format instead of n8n's console.log mess
-logger.remove()
-logger.add(
-    sys.stderr,
-    format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{message}</cyan> <dim>{extra}</dim>",
-    level="INFO",
-)
-logger.add(
-    "tracker.log",
-    rotation="10 MB",
-    retention="30 days",
-    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message} {extra}",
-    level="DEBUG",
-)
+
+class PipelineCancelledError(RuntimeError):
+    """Raised when a run receives a cooperative cancellation request."""
 
 
-def run_pipeline(since_date: date = None) -> dict:
+def run_pipeline_multiuser(
+    user_id: str,
+    since_date: Optional[date] = None,
+    run_id: str = "manual",
+    internal_id: Optional[str] = None,
+    start_stage: str | PipelineStage = PipelineStage.INGESTION,
+) -> dict:
     """
-    Runs the complete email tracking pipeline.
-    If since_date is provided, it overrides the database checkpoint.
+    Execute the pipeline for a user, optionally starting from a specific stage.
 
-    The flow is identical to the n8n workflow but with key improvements:
-    1. Incremental checkpoint (only looks for new emails)
-    2. Native deduplication via Postgres
-    3. Typed validation with Pydantic
-    4. Structured logging with loguru
-
-    Returns a dictionary with execution statistics.
+    Stage outputs are persisted into pipeline_run_steps.stats so a later resume or
+    stage rerun can continue from persisted artifacts instead of relying on in-memory
+    state within a single worker invocation.
     """
-    stats = {
-        "fetched": 0,
-        "after_prefilter": 0,
-        "after_dedup": 0,
-        "classified": 0,
-        "added": 0,
-        "updated": 0,
-        "skipped": 0,
-        "errors": 0,
-    }
-
-    logger.info("=" * 60)
-    logger.info("BewerbLens - Starting pipeline")
-    logger.info("=" * 60)
-
-    # ── STEP 1: Get checkpoint from Supabase ────────────────
     client = get_client()
-    # Override with since_date if provided, else query DB
-    if since_date:
-        fetch_from = since_date
-        logger.info(f"Using forced backfill start date: {fetch_from.isoformat()}")
-    else:
-        checkpoint_date = get_last_checkpoint(client)
-        # Go back 2 days as a safety margin
-        fetch_from = checkpoint_date - timedelta(days=2)
-        logger.info(f"Fetching emails since: {fetch_from.isoformat()}")
+    stats = {"added": 0, "updated": 0, "skipped": 0, "errors": 0}
+    step_run_id = internal_id or run_id
+    stage_to_start = _parse_stage(start_stage)
+    current_step = stage_to_start.value
 
-    # ── STEP 2: Fetch emails from Gmail ──────────────────────
-    # In n8n: "Build Gmail Queries" + "Fetch Emails (Per Month)" (4 calls)
-    # Here: a single call with after: fetch_from
-    raw_emails = fetch_emails(fetch_from)
-    stats["fetched"] = len(raw_emails)
-    logger.info(f"Fetched {len(raw_emails)} emails from Gmail")
+    log_to_db(client, internal_id, "INFO", f"Fetching profile for user {user_id}", "setup")
 
-    if not raw_emails:
-        logger.info("No emails found - pipeline complete")
-        return stats
+    try:
+        user_profile = client.table("user_profiles").select("*").eq("id", user_id).single().execute()
+        if not user_profile.data:
+            raise ValueError(f"User profile not found: {user_id}")
 
-    # ── STEP 2.5: Ingest raw emails into Bronze layer ────────
-    # v2.0: Store raw emails before processing for audit trail
-    bronze_count = 0
-    for email in raw_emails:
-        if insert_raw_email(client, email):
-            bronze_count += 1
-    logger.info(f"Bronze layer: {bronze_count}/{len(raw_emails)} raw emails ingested")
+        user = user_profile.data
+        log_to_db(client, internal_id, "INFO", f"User: {user['email']} | Region: {user['region']}", "setup")
+    except Exception as error:
+        log_to_db(client, internal_id, "ERROR", f"Failed to load user profile: {error}", "setup")
+        raise
 
-    # ── STEP 3: Pre-filter emails ───────────────────────────
-    # In n8n: "Pre-Filter" node with 5 JavaScript filters
-    # Here: same logic but with O(1) sets and typed code
-    filtered_emails, filter_stats = apply_pre_filters(raw_emails)
-    stats["after_prefilter"] = len(filtered_emails)
-    logger.info(f"Pre-filter: {len(filtered_emails)}/{len(raw_emails)} passed")
-
-    if not filtered_emails:
-        logger.info("All emails filtered - pipeline complete")
-        return stats
-
-    # ── STEP 4: Deduplicate against database ─────────────────
-    # In n8n: "Deduplicate Emails" used an in-memory Map
-    # Here: we query existing thread_ids from Supabase (persistent)
-    existing_threads = get_existing_thread_ids(client)
-    new_emails = [
-        email for email in filtered_emails
-        if email.thread_id not in existing_threads
-    ]
-    stats["after_dedup"] = len(new_emails)
-
-    # Also count those that are new threads but email already processed
-    logger.info(
-        f"Dedup: {len(new_emails)} new threads "
-        f"({len(filtered_emails) - len(new_emails)} already in DB)"
+    matcher = ApplicationMatcher(
+        company_threshold=0.85,
+        job_threshold=0.75,
+        composite_threshold=0.80,
     )
 
-    # Solo clasificar emails nuevos — los existentes ya están en la DB
-    # Las actualizaciones de estado llegan como nuevos threads (nuevo email_id)
-    emails_to_classify = new_emails
+    try:
+        for stage in _stages_from(stage_to_start):
+            current_step = stage.value
+            _set_current_phase(client, internal_id, stage)
+            _ensure_run_not_cancelled(client, internal_id)
 
-    if not emails_to_classify:
-        logger.info("No new emails to classify — pipeline complete")
+            if stage == PipelineStage.INGESTION:
+                ingestion_stats = _run_ingestion_stage(
+                    client=client,
+                    user=user,
+                    user_id=user_id,
+                    since_date=since_date,
+                    run_id=step_run_id,
+                    internal_id=internal_id,
+                )
+                if internal_id:
+                    update_heartbeat(client, internal_id)
+                if not ingestion_stats.email_ids:
+                    _skip_remaining_stages(
+                        client,
+                        step_run_id,
+                        PipelineStage.INGESTION,
+                        "No emails to process for this run.",
+                    )
+                    return stats
+
+            elif stage == PipelineStage.ANALYSIS:
+                analysis_stats = _run_analysis_stage(
+                    client=client,
+                    user_id=user_id,
+                    run_id=step_run_id,
+                    internal_id=internal_id,
+                )
+                if internal_id:
+                    update_heartbeat(client, internal_id)
+                if not analysis_stats.classifications:
+                    update_pipeline_step(
+                        client,
+                        step_run_id,
+                        PipelineStage.PERSISTENCE.value,
+                        "skipped",
+                        message="No classifications produced by analysis.",
+                    )
+                    return stats
+
+            elif stage == PipelineStage.PERSISTENCE:
+                persistence_stats = _run_persistence_stage(
+                    client=client,
+                    user=user,
+                    user_id=user_id,
+                    run_id=step_run_id,
+                    internal_id=internal_id,
+                    matcher=matcher,
+                )
+                stats.update(
+                    {
+                        "added": persistence_stats.added,
+                        "updated": persistence_stats.updated,
+                        "skipped": persistence_stats.skipped,
+                        "errors": persistence_stats.errors,
+                    }
+                )
+
+        log_to_db(
+            client,
+            internal_id,
+            "INFO",
+            f"Complete: {stats['added']} added, {stats['updated']} updated, {stats['errors']} errors",
+            "general",
+        )
         return stats
 
-    logger.info(f"Sending {len(emails_to_classify)} new emails to Gemini for classification")
+    except PipelineCancelledError as error:
+        message = str(error) or "Cancelled by user"
+        log_to_db(client, internal_id, "WARNING", message, current_step)
+        update_pipeline_step(client, step_run_id, current_step, "failed", message=message)
+        raise
+    except Exception as error:
+        log_to_db(client, internal_id, "ERROR", f"Pipeline failed at '{current_step}': {error}", current_step)
+        update_pipeline_step(client, step_run_id, current_step, "failed", message=str(error))
+        raise
 
-    # ── STEP 5: Classify with Gemini ─────────────────────────
-    # In n8n: "Build Gemini Batches" -> "Loop Over Batches" -> "Gemini API Call"
-    #         -> "Expand Results" -> "Classification Filter" (5 nodes, complex loop)
-    # Here: a single function with internal batching
-    classifications = classify_emails(emails_to_classify)
-    stats["classified"] = len(classifications)
 
-    # ── STEP 6: Process results ──────────────────────────────
-    # In n8n: "Read Applications Sheet" -> "Dedup Engine" -> "Route: Add/Update"
-    #         -> "Add New Row" / "Update Existing Row" (4+ nodes)
-    # Here: a loop with upsert_application that handles everything
-    min_confidence = settings.min_confidence
+def _run_ingestion_stage(
+    client,
+    user: dict,
+    user_id: str,
+    since_date: Optional[date],
+    run_id: str,
+    internal_id: Optional[str],
+) -> IngestionStageStats:
+    update_pipeline_step(client, run_id, PipelineStage.INGESTION.value, "running", progress=0, message="Starting email ingestion")
+    log_to_db(client, internal_id, "INFO", "Starting email ingestion", PipelineStage.INGESTION.value)
 
-    for email, classification in zip(emails_to_classify, classifications):
-        status_enum = CLASSIFICATION_TO_STATUS.get(classification.classification)
+    existing_ids_snapshot = get_existing_email_ids_for_user(client, user_id)
+    service = get_gmail_service_for_user(user, db_client=client)
+    if not service:
+        raise RuntimeError(f"Failed to initialize Gmail for user {user_id}")
 
-        # Confidence filter (same as n8n's "Classification Filter" node)
-        is_valid_job = (
-            status_enum is not None
-            and classification.confidence >= min_confidence
+    new_emails = fetch_emails_for_user(
+        service,
+        user_id=user_id,
+        since_date=since_date,
+        existing_ids=existing_ids_snapshot,
+    )
+    fetched_count = len(new_emails)
+    log_to_db(client, internal_id, "INFO", f"Fetched {fetched_count} new emails", PipelineStage.INGESTION.value)
+
+    pending_emails = get_unprocessed_emails_for_user(client, user_id, limit=50)
+    recovered_count = 0
+    if pending_emails:
+        new_ids = {email.email_id for email in new_emails}
+        recovered_emails = [email for email in pending_emails if email.email_id not in new_ids]
+        recovered_count = len(recovered_emails)
+        if recovered_count:
+            log_to_db(client, internal_id, "INFO", f"Recovery: {recovered_count} pending", PipelineStage.INGESTION.value)
+            new_emails.extend(recovered_emails)
+
+    if not new_emails:
+        stage_stats = IngestionStageStats()
+        update_pipeline_step(
+            client,
+            run_id,
+            PipelineStage.INGESTION.value,
+            "success",
+            progress=100,
+            message="No new emails found.",
+            stats=stage_stats.model_dump(mode="json"),
         )
+        return stage_stats
 
-        if not is_valid_job:
-            stats["skipped"] += 1
-            # Log for auditing
-            log_processing(client, ProcessingLog(
-                thread_id=email.thread_id,
-                email_subject=email.subject[:150],
-                classification_result=classification.classification.value,
-                error_message=f"Skipped: conf={classification.confidence:.2f}, status={status_enum}",
-            ))
+    new_emails, filter_stats = apply_user_filters(client, user_id, new_emails)
+    log_to_db(
+        client,
+        internal_id,
+        "INFO",
+        f"Filtered: {filter_stats.passed}/{filter_stats.total} emails passed user filters",
+        PipelineStage.INGESTION.value,
+    )
+
+    for index, email in enumerate(new_emails):
+        _ensure_run_not_cancelled(client, internal_id)
+        insert_raw_email_with_user(client, user_id, email)
+        if index % 10 == 0:
+            progress = int((index / max(len(new_emails), 1)) * 100)
+            update_pipeline_step(
+                client,
+                run_id,
+                PipelineStage.INGESTION.value,
+                "running",
+                progress=progress,
+                message=f"Stored {index + 1}/{len(new_emails)} emails",
+            )
+
+    stage_stats = IngestionStageStats(
+        email_ids=[email.email_id for email in new_emails],
+        total_fetched=fetched_count,
+        total_recovered=recovered_count,
+        total_after_filters=len(new_emails),
+    )
+    update_pipeline_step(
+        client,
+        run_id,
+        PipelineStage.INGESTION.value,
+        "success",
+        progress=100,
+        message=f"Stored {len(new_emails)} emails for downstream stages",
+        stats=stage_stats.model_dump(mode="json"),
+    )
+    return stage_stats
+
+
+def _run_analysis_stage(client, user_id: str, run_id: str, internal_id: Optional[str]) -> AnalysisStageStats:
+    ingestion_stats = _load_stage_stats(client, run_id, PipelineStage.INGESTION, IngestionStageStats)
+    if not ingestion_stats.email_ids:
+        update_pipeline_step(
+            client,
+            run_id,
+            PipelineStage.ANALYSIS.value,
+            "skipped",
+            message="No ingested email artifacts available.",
+        )
+        return AnalysisStageStats()
+
+    emails = _load_raw_emails_for_ids(client, user_id, ingestion_stats.email_ids)
+    if not emails:
+        raise RuntimeError("Ingestion artifacts were found, but raw_emails could not be loaded.")
+
+    update_pipeline_step(client, run_id, PipelineStage.ANALYSIS.value, "running", progress=0, message="Classifying emails")
+    log_to_db(client, internal_id, "INFO", f"Classifying {len(emails)} emails", PipelineStage.ANALYSIS.value)
+
+    classifier = get_classifier()
+    classifications = classifier.classify(emails)
+    stage_stats = AnalysisStageStats(
+        email_ids=ingestion_stats.email_ids,
+        classifications=classifications,
+        total_classified=len(classifications),
+    )
+
+    update_pipeline_step(
+        client,
+        run_id,
+        PipelineStage.ANALYSIS.value,
+        "success",
+        progress=100,
+        message=f"Classified {len(classifications)} emails",
+        stats=stage_stats.model_dump(mode="json"),
+    )
+    log_to_db(client, internal_id, "INFO", f"Classified {len(classifications)} emails", PipelineStage.ANALYSIS.value)
+    return stage_stats
+
+
+def _run_persistence_stage(
+    client,
+    user: dict,
+    user_id: str,
+    run_id: str,
+    internal_id: Optional[str],
+    matcher: ApplicationMatcher,
+) -> PersistenceStageStats:
+    ingestion_stats = _load_stage_stats(client, run_id, PipelineStage.INGESTION, IngestionStageStats)
+    analysis_stats = _load_stage_stats(client, run_id, PipelineStage.ANALYSIS, AnalysisStageStats)
+
+    if not ingestion_stats.email_ids:
+        update_pipeline_step(
+            client,
+            run_id,
+            PipelineStage.PERSISTENCE.value,
+            "skipped",
+            message="No ingested emails available for persistence.",
+        )
+        return PersistenceStageStats()
+
+    if not analysis_stats.classifications:
+        raise RuntimeError("Analysis artifacts are missing; rerun analysis before persistence.")
+
+    emails = _load_raw_emails_for_ids(client, user_id, ingestion_stats.email_ids)
+    if not emails:
+        raise RuntimeError("Failed to load raw email artifacts for persistence.")
+
+    update_pipeline_step(client, run_id, PipelineStage.PERSISTENCE.value, "running", progress=0, message="Saving results")
+    log_to_db(client, internal_id, "INFO", "Saving to database", PipelineStage.PERSISTENCE.value)
+
+    apps_cache = client.table("applications").select("*").eq("user_id", user_id).execute().data
+    stage_stats = PersistenceStageStats(email_ids=ingestion_stats.email_ids)
+
+    for index, (email, classification) in enumerate(zip(emails, analysis_stats.classifications)):
+        _ensure_run_not_cancelled(client, internal_id)
+
+        if classification.classification == Classification.NOT_JOB_RELATED:
+            stage_stats.skipped += 1
             continue
 
         try:
-            # Upsert to Supabase (handles add/update/skip internally)
-            action = upsert_application(client, email, classification)
+            action = upsert_application_fixed(
+                client,
+                user_id,
+                email,
+                classification,
+                apps_cache,
+                matcher,
+            )
 
             if action == "added":
-                stats["added"] += 1
-            elif action == "updated":
-                stats["updated"] += 1
+                stage_stats.added += 1
+                apps_cache = client.table("applications").select("*").eq("user_id", user_id).execute().data
+                log_to_db(
+                    client,
+                    internal_id,
+                    "INFO",
+                    f"Added: {classification.company_name} / {classification.job_title}",
+                    PipelineStage.PERSISTENCE.value,
+                )
             else:
-                stats["skipped"] += 1
-
-            # Notify if added or updated
-            if action in ("added", "updated"):
-                send_notification(
-                    action=action,
-                    company_name=classification.company_name,
-                    job_title=classification.job_title,
-                    platform=classification.platform,
-                    status=status_enum.value if status_enum else "",
-                    email_subject=email.subject,
-                    date_applied=email.date.isoformat(),
-                    notes=classification.reasoning,
+                stage_stats.updated += 1
+                log_to_db(
+                    client,
+                    internal_id,
+                    "INFO",
+                    f"Updated: {classification.company_name} / {classification.job_title}",
+                    PipelineStage.PERSISTENCE.value,
                 )
 
-            # Audit log
-            log_processing(client, ProcessingLog(
-                thread_id=email.thread_id,
-                email_subject=email.subject[:150],
-                classification_result=f"{classification.classification.value} -> {action}",
-            ))
-
+            if user.get("telegram_enabled") and action in ("added", "updated"):
+                status_enum = CLASSIFICATION_TO_STATUS.get(classification.classification)
+                send_notification_for_user(
+                    user=user,
+                    action=NotificationAction.ADDED if action == "added" else NotificationAction.UPDATED,
+                    company_name=classification.company_name,
+                    job_title=classification.job_title,
+                    status=status_enum.value if status_enum else "Applied",
+                    platform=classification.platform,
+                    email_subject=email.subject,
+                )
         except Exception as error:
-            stats["errors"] += 1
-            logger.bind(
-                email_id=email.email_id,
-                error=str(error)
-            ).error("Failed to process application")
-            log_processing(client, ProcessingLog(
-                thread_id=email.thread_id,
-                email_subject=email.subject[:150],
-                error_message=str(error)[:300],
-            ))
+            log_to_db(client, internal_id, "ERROR", f"Error persisting: {error}", PipelineStage.PERSISTENCE.value)
+            stage_stats.errors += 1
 
-    # ── Final summary ────────────────────────────────────────
-    logger.info("=" * 60)
-    logger.info("Pipeline complete")
-    logger.info(f"   Fetched:      {stats['fetched']}")
-    logger.info(f"   Pre-filtered: {stats['after_prefilter']}")
-    logger.info(f"   New threads:  {stats['after_dedup']}")
-    logger.info(f"   Classified:   {stats['classified']}")
-    logger.info(f"   Added:        {stats['added']}")
-    logger.info(f"   Updated:      {stats['updated']}")
-    logger.info(f"   Skipped:      {stats['skipped']}")
-    logger.info(f"   Errors:       {stats['errors']}")
-    logger.info("=" * 60)
+        if index % 5 == 0:
+            progress = int((index / max(len(emails), 1)) * 100)
+            update_pipeline_step(
+                client,
+                run_id,
+                PipelineStage.PERSISTENCE.value,
+                "running",
+                progress=progress,
+                message=f"Persisted {index + 1}/{len(emails)} emails",
+            )
 
-    return stats
-
-
-if __name__ == "__main__":
-    import argparse
-    import traceback
-
-    parser = argparse.ArgumentParser(description="BewerbLens — Main Pipeline")
-    parser.add_argument(
-        "--since",
-        type=str,
-        help="Forced backfill start date (YYYY-MM-DD)",
-        default=None
+    mark_raw_emails_processed(client, ingestion_stats.email_ids)
+    update_pipeline_step(
+        client,
+        run_id,
+        PipelineStage.PERSISTENCE.value,
+        "success",
+        progress=100,
+        message=(
+            f"Added {stage_stats.added}, updated {stage_stats.updated}, "
+            f"skipped {stage_stats.skipped}, errors {stage_stats.errors}"
+        ),
+        stats=stage_stats.model_dump(mode="json"),
     )
-    args = parser.parse_args()
+    return stage_stats
 
-    # Parse since_date if provided
-    forced_date = None
-    if args.since:
+
+def _parse_stage(stage: str | PipelineStage) -> PipelineStage:
+    if isinstance(stage, PipelineStage):
+        return stage
+    return PipelineStage(stage)
+
+
+def _stages_from(start_stage: PipelineStage) -> list[PipelineStage]:
+    start_index = PIPELINE_STAGE_ORDER.index(start_stage)
+    return list(PIPELINE_STAGE_ORDER[start_index:])
+
+
+def _skip_remaining_stages(client, run_id: str, completed_stage: PipelineStage, message: str) -> None:
+    completed_index = PIPELINE_STAGE_ORDER.index(completed_stage)
+    for stage in PIPELINE_STAGE_ORDER[completed_index + 1 :]:
+        update_pipeline_step(client, run_id, stage.value, "skipped", message=message)
+
+
+def _set_current_phase(client, internal_id: Optional[str], stage: PipelineStage) -> None:
+    if not internal_id:
+        return
+    try:
+        client.table("pipeline_runs").update({"current_phase": stage.value}).eq("id", internal_id).execute()
+    except Exception as error:
+        logger.warning(f"Failed to update current_phase for run {internal_id}: {error}")
+
+
+def _ensure_run_not_cancelled(client, internal_id: Optional[str]) -> None:
+    if not internal_id:
+        return
+
+    result = client.table("pipeline_runs").select("status").eq("id", internal_id).limit(1).execute()
+    if not result.data:
+        return
+
+    status = result.data[0].get("status")
+    if status in {"cancelling", "cancelled"}:
+        raise PipelineCancelledError("Run cancelled by user.")
+
+
+def _load_stage_stats(client, run_id: str, stage: PipelineStage, model_type):
+    result = (
+        client.table("pipeline_run_steps")
+        .select("stats")
+        .eq("run_id", run_id)
+        .eq("step_name", stage.value)
+        .limit(1)
+        .execute()
+    )
+    raw_stats = result.data[0].get("stats") if result.data else {}
+    return model_type.model_validate(raw_stats or {})
+
+
+def _load_raw_emails_for_ids(client, user_id: str, email_ids: list[str]) -> list[EmailMetadata]:
+    if not email_ids:
+        return []
+
+    result = (
+        client.table("raw_emails")
+        .select("*")
+        .eq("user_id", user_id)
+        .in_("email_id", email_ids)
+        .execute()
+    )
+    rows_by_email_id = {row["email_id"]: row for row in result.data or []}
+
+    emails: list[EmailMetadata] = []
+    for email_id in email_ids:
+        row = rows_by_email_id.get(email_id)
+        if not row:
+            continue
+        emails.append(
+            EmailMetadata(
+                email_id=row.get("email_id", ""),
+                thread_id=row.get("thread_id", ""),
+                subject=row.get("subject", ""),
+                sender=row.get("sender", ""),
+                sender_email=row.get("sender_email", ""),
+                date=row.get("email_date") or row.get("date"),
+                body=row.get("body_preview", "") or row.get("body", ""),
+            )
+        )
+    return emails
+
+
+# ══════════════════════════════════════════════════════════════
+# Helper Functions (User-Scoped)
+# ══════════════════════════════════════════════════════════════
+
+def log_to_db(client, run_id, level, msg, step):
+    """Write log directly to pipeline_run_logs table."""
+    if not run_id:
+        return
+    try:
+        client.table("pipeline_run_logs").insert({
+            "run_id": run_id,
+            "step_name": step,
+            "level": level.upper(),
+            "message": msg,
+        }).execute()
+    except Exception as error:
+        logger.error(f"Failed to write log: {error}")
+
+
+def get_existing_email_ids_for_user(client, user_id) -> set:
+    """Get existing email IDs for specific user."""
+    result = client.table("raw_emails").select("email_id").eq("user_id", user_id).execute()
+    return {row["email_id"] for row in result.data}
+
+
+def get_unprocessed_emails_for_user(client, user_id, limit=50):
+    """Get unprocessed emails for specific user."""
+    result = (
+        client.table("raw_emails")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("is_processed", False)
+        .limit(limit)
+        .execute()
+    )
+
+    emails = []
+    for row in result.data:
         try:
-            forced_date = date.fromisoformat(args.since)
-        except ValueError:
-            logger.error(f"Invalid date format: {args.since}. Use YYYY-MM-DD")
-            sys.exit(1)
+            emails.append(
+                EmailMetadata(
+                    email_id=row.get("email_id", ""),
+                    thread_id=row.get("thread_id", ""),
+                    subject=row.get("subject", ""),
+                    sender=row.get("sender", ""),
+                    sender_email=row.get("sender_email", ""),
+                    date=row.get("email_date") or row.get("date"),
+                    body=row.get("body_preview", "") or row.get("body", ""),
+                )
+            )
+        except Exception:
+            pass
+    return emails
+
+
+def insert_raw_email_with_user(client, user_id, email):
+    """Insert raw email with user_id (upsert to handle re-runs)."""
+    client.table("raw_emails").upsert(
+        {
+            "user_id": user_id,
+            "email_id": email.email_id,
+            "thread_id": email.thread_id,
+            "subject": email.subject,
+            "sender": email.sender,
+            "sender_email": email.sender_email,
+            "body_preview": email.body[:800],
+            "email_date": str(email.date),
+            "gmail_link": email.gmail_link,
+        },
+        on_conflict="email_id",
+    ).execute()
+
+
+def send_notification_for_user(user, **kwargs):
+    """Send Telegram notification using user's credentials."""
+    if not user.get("telegram_enabled"):
+        return
+
+    import config
+
+    original_token = config.settings.telegram_bot_token
+    original_chat = config.settings.telegram_chat_id
 
     try:
-        result = run_pipeline(since_date=forced_date)
-        # Exit code 0 = success, 1 = errors
-        sys.exit(0 if result["errors"] == 0 else 1)
-    except Exception as fatal_error:
-        logger.bind(error=str(fatal_error)).critical("Pipeline crashed")
-        traceback.print_exc()
-        sys.exit(2)
+        config.settings.telegram_bot_token = user.get("telegram_bot_token")
+        config.settings.telegram_chat_id = user.get("telegram_chat_id")
+        send_notification(**kwargs)
+    finally:
+        config.settings.telegram_bot_token = original_token
+        config.settings.telegram_chat_id = original_chat

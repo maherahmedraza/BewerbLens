@@ -30,6 +30,7 @@ env/
 
 # ── Node.js / Next.js ─────────────────────────────────────
 node_modules/
+node_bin/
 .next/
 out/
 *.tsbuildinfo
@@ -59,8 +60,6 @@ Thumbs.db
 .LSOverride
 ._*
 
-# ── Docker ─────────────────────────────────────────────────
-.docker/
-
-# ── n8n ────────────────────────────────────────────────────
-n8n-backup/
+# ── OS / WSL ───────────────────────────────────────────────
+*:Zone.Identifier
+test-results/

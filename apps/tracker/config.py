@@ -1,10 +1,10 @@
-# ╔══════════════════════════════════════════════════════════════╗
-# ║  Centralized configuration with Pydantic Settings           ║
-# ║  Validates all environment variables on startup.            ║
-# ╚══════════════════════════════════════════════════════════════╝
-
+import os
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+# Absolute path to the .env file in project root
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ENV_FILE = os.path.join(ROOT_DIR, ".env")
 
 
 class Settings(BaseSettings):
@@ -16,11 +16,16 @@ class Settings(BaseSettings):
     # ── Gmail ──────────────────────────────────────────────
     gmail_credentials_path: str = Field(default="credentials.json")
     gmail_token_path: str = Field(default="token.json")
-    user_email: str = Field(default="maherahmedraza1@gmail.com")
+    # JSON strings para autenticación sin archivos locales
+    gmail_credentials_json: str | None = Field(default=None)
+    gmail_token_json: str | None = Field(default=None)
+    user_email: str = Field(default="")
+    gmail_oauth_redirect_uri: str = Field(default="http://localhost:3000/auth/gmail/callback")
+    encryption_key: str = Field(default="")
 
     # ── Gemini AI ──────────────────────────────────────────
     gemini_api_key: str = Field(default="")
-    gemini_model: str = Field(default="gemini-2.0-flash")
+    gemini_model: str = Field(default="gemini-3.1-flash-lite-preview")
 
     # ── Supabase ───────────────────────────────────────────
     supabase_url: str = Field(default="")
@@ -32,14 +37,20 @@ class Settings(BaseSettings):
     telegram_chat_id: str = Field(default="")
 
     # ── Pipeline ───────────────────────────────────────────
-    batch_size: int = Field(default=10, ge=1, le=50)
+    batch_size: int = Field(default=50, ge=1, le=100)
     min_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
     backfill_start_date: str = Field(default="2025-10-01")
+    prompt_body_max_chars: int = Field(default=400, ge=100)
+    classifier_max_batch_tokens: int = Field(default=3000, ge=500)
+
+    # ── Classifier ────────────────────────────────────────
+    classifier_provider: str = Field(default="gemini") # "gemini" | "openai"
 
     model_config = {
-        "env_file": ".env",
+        "env_file": ENV_FILE,
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
+        "extra": "ignore",
     }
 
 

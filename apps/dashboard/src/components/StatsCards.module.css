@@ -19,12 +19,13 @@
   flex-direction: column;
   gap: 16px;
   box-shadow: var(--shadow-sm);
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-4px);
   box-shadow: var(--shadow);
+  border-color: var(--text-muted);
 }
 
 .cardHeader {
@@ -40,6 +41,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.3s ease;
+}
+
+.card:hover .iconWrapper {
+  transform: scale(1.1) rotate(-5deg);
 }
 
 .icon {
@@ -114,7 +120,7 @@
 
 .progressBar {
   height: 100%;
-  transition: width 0.5s ease;
+  transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .empty {
