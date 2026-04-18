@@ -21,6 +21,14 @@ async function getApplications(query: string = ""): Promise<Application[]> {
   return (data as Application[]) || [];
 }
 
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  "Applied": { label: "Pending", color: "var(--accent-blue)" },
+  "Rejected": { label: "Rejected", color: "var(--accent-red)" },
+  "Positive Response": { label: "Positive", color: "var(--accent-green)" },
+  "Interview": { label: "Interview", color: "var(--accent-orange)" },
+  "Offer": { label: "Offer", color: "var(--accent-purple)" },
+};
+
 export default async function ApplicationTable({ highlightQuery }: { highlightQuery?: string }) {
   const applications = await getApplications(highlightQuery);
 
@@ -35,6 +43,7 @@ export default async function ApplicationTable({ highlightQuery }: { highlightQu
 
   return (
     <div className={styles.container}>
+    <div className={styles.container}>
       <ApplicationStats applications={applications} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginTop: '24px' }}>
         {applications.map((app) => (
@@ -44,6 +53,7 @@ export default async function ApplicationTable({ highlightQuery }: { highlightQu
           />
         ))}
       </div>
+    </div>
     </div>
   );
 }
