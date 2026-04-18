@@ -6,11 +6,12 @@ import ExecutionHistory from "./components/ExecutionHistory";
 import ConfigPanel from "./components/ConfigPanel";
 import LogDetailDrawer from "./components/LogDetailDrawer";
 import styles from "./page.module.css";
+import type { PipelineRun } from "@/lib/types";
 
 export default function PipelinePage() {
-  const [selectedRun, setSelectedRun] = useState<any>(null);
+  const [selectedRun, setSelectedRun] = useState<PipelineRun | null>(null);
 
-  const handleOpenLogs = (run: any) => {
+  const handleOpenLogs = (run: PipelineRun) => {
     setSelectedRun(run);
   };
 
@@ -33,7 +34,7 @@ export default function PipelinePage() {
         {/* Left Column: Monitoring & History */}
         <div className={styles.mainContent}>
           <Suspense fallback={<div className={styles.skeleton}>Loading Monitor...</div>}>
-            <PipelineMonitor />
+            <PipelineMonitor onViewLogs={handleOpenLogs} />
           </Suspense>
           
           <section className={styles.historySection}>
