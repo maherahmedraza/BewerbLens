@@ -5,8 +5,10 @@
 # ║  • Fetches Gmail credentials per user_id                    ║
 # ║  • Applies email filters per user_id                        ║
 # ║  • Writes applications with user_id                         ║
+# ║  • Sends consolidated Telegram report at end of run         ║
 # ╚══════════════════════════════════════════════════════════════╝
 
+import time as _time
 from datetime import date
 from typing import Optional
 
@@ -16,15 +18,14 @@ from classifier_factory import get_classifier
 from fuzzy_matcher import ApplicationMatcher, upsert_application_fixed
 from gmail_service import fetch_emails_for_user, get_gmail_service_for_user
 from models import (
-    AnalysisStageStats,
     CLASSIFICATION_TO_STATUS,
+    PIPELINE_STAGE_ORDER,
+    AnalysisStageStats,
     Classification,
-    EmailClassification,
     EmailMetadata,
     IngestionStageStats,
-    NotificationAction,
     PersistenceStageStats,
-    PIPELINE_STAGE_ORDER,
+    PipelineRunReport,
     PipelineStage,
 )
 from pre_filter import apply_user_filters
@@ -34,7 +35,6 @@ from supabase_service import (
     update_heartbeat,
     update_pipeline_step,
 )
-from telegram_notifier import send_notification
 
 
 class PipelineCancelledError(RuntimeError):
@@ -54,12 +54,16 @@ def run_pipeline_multiuser(
     Stage outputs are persisted into pipeline_run_steps.stats so a later resume or
     stage rerun can continue from persisted artifacts instead of relying on in-memory
     state within a single worker invocation.
+
+    Telegram: A single consolidated report is sent at the end of the run
+    instead of individual per-job notifications.
     """
     client = get_client()
     stats = {"added": 0, "updated": 0, "skipped": 0, "errors": 0}
     step_run_id = internal_id or run_id
     stage_to_start = _parse_stage(start_stage)
     current_step = stage_to_start.value
+    run_start_time = _time.monotonic()
 
     log_to_db(client, internal_id, "INFO", f"Fetching profile for user {user_id}", "setup")
 
@@ -143,6 +147,7 @@ def run_pipeline_multiuser(
                     }
                 )
 
+        run_duration = _time.monotonic() - run_start_time
         log_to_db(
             client,
             internal_id,
@@ -150,6 +155,17 @@ def run_pipeline_multiuser(
             f"Complete: {stats['added']} added, {stats['updated']} updated, {stats['errors']} errors",
             "general",
         )
+
+        # ── Consolidated Telegram report ──────────────────────
+        if user.get("telegram_enabled") and hasattr(persistence_stats, "report"):
+            _send_consolidated_report(
+                user=user,
+                report=persistence_stats.report,
+                run_label=run_id,
+                user_email=user.get("email", ""),
+                duration_seconds=run_duration,
+            )
+
         return stats
 
     except PipelineCancelledError as error:
@@ -344,6 +360,9 @@ def _run_persistence_stage(
     apps_cache = client.table("applications").select("*").eq("user_id", user_id).execute().data
     stage_stats = PersistenceStageStats(email_ids=ingestion_stats.email_ids)
 
+    # ── Report collector — accumulates data for consolidated Telegram report ──
+    report = PipelineRunReport()
+
     for index, (email, classification) in enumerate(zip(emails, analysis_stats.classifications)):
         _ensure_run_not_cancelled(client, internal_id)
 
@@ -361,8 +380,12 @@ def _run_persistence_stage(
                 matcher,
             )
 
+            status_enum = CLASSIFICATION_TO_STATUS.get(classification.classification)
+            status_value = status_enum.value if status_enum else "Applied"
+
             if action == "added":
                 stage_stats.added += 1
+                report.added_companies.append(classification.company_name)
                 apps_cache = client.table("applications").select("*").eq("user_id", user_id).execute().data
                 log_to_db(
                     client,
@@ -373,6 +396,7 @@ def _run_persistence_stage(
                 )
             else:
                 stage_stats.updated += 1
+                report.updated_companies.append(classification.company_name)
                 log_to_db(
                     client,
                     internal_id,
@@ -381,20 +405,13 @@ def _run_persistence_stage(
                     PipelineStage.PERSISTENCE.value,
                 )
 
-            if user.get("telegram_enabled") and action in ("added", "updated"):
-                status_enum = CLASSIFICATION_TO_STATUS.get(classification.classification)
-                send_notification_for_user(
-                    user=user,
-                    action=NotificationAction.ADDED if action == "added" else NotificationAction.UPDATED,
-                    company_name=classification.company_name,
-                    job_title=classification.job_title,
-                    status=status_enum.value if status_enum else "Applied",
-                    platform=classification.platform,
-                    email_subject=email.subject,
-                )
+            # Accumulate status counts for the report
+            report.status_counts[status_value] = report.status_counts.get(status_value, 0) + 1
+
         except Exception as error:
             log_to_db(client, internal_id, "ERROR", f"Error persisting: {error}", PipelineStage.PERSISTENCE.value)
             stage_stats.errors += 1
+            report.error_messages.append(str(error)[:150])
 
         if index % 5 == 0:
             progress = int((index / max(len(emails), 1)) * 100)
@@ -406,6 +423,15 @@ def _run_persistence_stage(
                 progress=progress,
                 message=f"Persisted {index + 1}/{len(emails)} emails",
             )
+
+    # Finalize report stats
+    report.added = stage_stats.added
+    report.updated = stage_stats.updated
+    report.skipped = stage_stats.skipped
+    report.errors = stage_stats.errors
+
+    # Attach report to stage_stats for the caller to use
+    stage_stats.report = report  # type: ignore[attr-defined]
 
     mark_raw_emails_processed(client, ingestion_stats.email_ids)
     update_pipeline_step(
@@ -598,30 +624,21 @@ def insert_raw_email_with_user(client, user_id, email):
     ).execute()
 
 
-def send_notification_for_user(user, **kwargs):
-    """Send Telegram notification using user's per-profile credentials (thread-safe)."""
-    if not user.get("telegram_enabled"):
-        return
+def _send_consolidated_report(
+    user: dict,
+    report: PipelineRunReport,
+    run_label: str,
+    user_email: str,
+    duration_seconds: float,
+) -> None:
+    """Send a single consolidated Telegram report at end of pipeline run."""
+    report.run_label = run_label
+    report.user_email = user_email
+    report.duration_seconds = duration_seconds
 
-    bot_token = user.get("telegram_bot_token")
-    chat_id = user.get("telegram_chat_id")
-    if not bot_token or not chat_id:
-        logger.warning("Telegram enabled for user but bot_token or chat_id is missing")
-        return
-
-    from telegram_notifier import _build_message
-    import requests
-
-    text = _build_message(**kwargs)
-    if not text:
-        return
-
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    from telegram_notifier import send_run_report_for_user
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
-        logger.bind(company=kwargs.get("company_name")).info("Telegram notification sent (per-user)")
+        send_run_report_for_user(user, report)
     except Exception as error:
-        logger.bind(error=str(error)).error("Telegram notification failed for user")
+        logger.bind(error=str(error)).error("Failed to send consolidated Telegram report")

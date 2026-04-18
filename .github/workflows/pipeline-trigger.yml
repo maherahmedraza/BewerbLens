@@ -1,0 +1,106 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  Pipeline Trigger — Scheduled backend sync via GitHub Cron  ║
+# ║                                                             ║
+# ║  Inserts a sync task directly into Supabase pipeline_tasks  ║
+# ║  for the orchestrator worker to pick up.                    ║
+# ║                                                             ║
+# ║  Prerequisites (GitHub Secrets):                            ║
+# ║  • SUPABASE_URL — Project URL                               ║
+# ║  • SUPABASE_KEY — Service role key (backend only)            ║
+# ║  • PIPELINE_USER_ID — UUID of the user to sync              ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+name: Scheduled Pipeline Sync
+
+on:
+  schedule:
+    # Every 4 hours — matches the default scheduler interval
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      since_date:
+        description: 'Fetch emails since date (YYYY-MM-DD). Leave empty for auto.'
+        required: false
+        type: string
+
+jobs:
+  trigger-pipeline:
+    name: Trigger Pipeline Sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: Insert sync task into Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PIPELINE_USER_ID: ${{ secrets.PIPELINE_USER_ID }}
+          SINCE_DATE: ${{ inputs.since_date || '' }}
+        run: |
+          set -euo pipefail
+
+          RUN_LABEL="RUN-$(date -u +'%Y%m%d-%H%M%S')-$(head -c 3 /dev/urandom | xxd -p)"
+
+          # 1. Create pipeline_run record
+          RUN_RESPONSE=$(curl -sf \
+            -X POST "${SUPABASE_URL}/rest/v1/pipeline_runs" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            -d "{
+              \"run_id\": \"${RUN_LABEL}\",
+              \"user_id\": \"${PIPELINE_USER_ID}\",
+              \"status\": \"running\",
+              \"triggered_by\": \"github_actions\",
+              \"current_phase\": \"ingestion\"
+            }")
+
+          INTERNAL_ID=$(echo "$RUN_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)[0]['id'])")
+          echo "Created pipeline_run: ${INTERNAL_ID}"
+
+          # 2. Initialize pipeline steps
+          for STEP in ingestion analysis persistence; do
+            curl -sf \
+              -X POST "${SUPABASE_URL}/rest/v1/pipeline_run_steps" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"run_id\": \"${INTERNAL_ID}\",
+                \"step_name\": \"${STEP}\",
+                \"status\": \"pending\",
+                \"progress_pct\": 0
+              }"
+          done
+
+          # 3. Build since_date parameter
+          if [ -n "${SINCE_DATE}" ]; then
+            SINCE_DATE_PARAM="\"${SINCE_DATE}\""
+          else
+            SINCE_DATE_PARAM="null"
+          fi
+
+          # 4. Insert pipeline task for the worker to pick up
+          curl -sf \
+            -X POST "${SUPABASE_URL}/rest/v1/pipeline_tasks" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"task_type\": \"sync\",
+              \"status\": \"pending\",
+              \"user_id\": \"${PIPELINE_USER_ID}\",
+              \"run_id\": \"${INTERNAL_ID}\",
+              \"parameters\": {
+                \"user_id\": \"${PIPELINE_USER_ID}\",
+                \"since_date\": ${SINCE_DATE_PARAM},
+                \"run_id\": \"${RUN_LABEL}\",
+                \"internal_id\": \"${INTERNAL_ID}\",
+                \"triggered_by\": \"github_actions\",
+                \"start_stage\": \"ingestion\"
+              }
+            }"
+
+          echo "### ⏰ Pipeline sync triggered!" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Run:** ${RUN_LABEL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**ID:** ${INTERNAL_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Triggered by:** GitHub Actions (cron)" >> "$GITHUB_STEP_SUMMARY"

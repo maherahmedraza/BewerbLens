@@ -108,6 +108,21 @@ class PersistenceStageStats(BaseModel):
     errors: int = 0
 
 
+class PipelineRunReport(BaseModel):
+    """Aggregated report data for end-of-run Telegram notification."""
+    run_label: str = ""
+    user_email: str = ""
+    added: int = 0
+    updated: int = 0
+    skipped: int = 0
+    errors: int = 0
+    added_companies: list[str] = Field(default_factory=list)
+    updated_companies: list[str] = Field(default_factory=list)
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    error_messages: list[str] = Field(default_factory=list)
+    duration_seconds: float = 0.0
+
+
 class EmailMetadata(BaseModel):
     email_id: str
     thread_id: str
