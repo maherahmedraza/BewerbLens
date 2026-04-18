@@ -49,7 +49,7 @@ export default async function ApplicationTable({ highlightQuery }: { highlightQu
         {applications.map((app) => (
           <ApplicationThreadCard 
             key={app.id} 
-            application={app as any} 
+            application={app} 
           />
         ))}
       </div>
