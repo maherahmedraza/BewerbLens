@@ -171,7 +171,8 @@ def _run_ingestion_stage(
     run_id: str,
     internal_id: Optional[str],
 ) -> IngestionStageStats:
-    update_pipeline_step(client, run_id, PipelineStage.INGESTION.value, "running", progress=0, message="Starting email ingestion")
+    update_pipeline_step(client, run_id, PipelineStage.INGESTION.value, "running", progress=0, message="St
+    arting email ingestion")
     log_to_db(client, internal_id, "INFO", "Starting email ingestion", PipelineStage.INGESTION.value)
 
     existing_ids_snapshot = get_existing_email_ids_for_user(client, user_id)
@@ -186,7 +187,8 @@ def _run_ingestion_stage(
         existing_ids=existing_ids_snapshot,
     )
     fetched_count = len(new_emails)
-    log_to_db(client, internal_id, "INFO", f"Fetched {fetched_count} new emails", PipelineStage.INGESTION.value)
+    log_to_db(client, internal_id, "INFO", f"Fetched {fetched_count} new emails", PipelineStage.ING
+    ESTION.value)
 
     pending_emails = get_unprocessed_emails_for_user(client, user_id, limit=50)
     recovered_count = 0
@@ -195,7 +197,8 @@ def _run_ingestion_stage(
         recovered_emails = [email for email in pending_emails if email.email_id not in new_ids]
         recovered_count = len(recovered_emails)
         if recovered_count:
-            log_to_db(client, internal_id, "INFO", f"Recovery: {recovered_count} pending", PipelineStage.INGESTION.value)
+            log_to_db(client, internal_id, "INFO", f"Recovery: {recovered_count} pending", PipelineStage.INGEST
+            ION.value)
             new_emails.extend(recovered_emails)
 
     if not new_emails:
