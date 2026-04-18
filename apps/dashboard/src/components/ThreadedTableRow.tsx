@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Application } from "@/lib/types";
 import { normalizeStatus } from "@/lib/status";
+import { Application, StatusHistoryEntry } from "@/lib/types";
 import styles from "./ApplicationTable.module.css";
 import { 
   EnvelopeIcon, 
@@ -118,7 +119,7 @@ export default function ThreadedTableRow({ app, statusMap }: Props) {
                             {entryStatus.label}
                           </span>
                           <span className={styles.timelineDate}>
-                            {new Date(entry.changed_at || entry.date).toLocaleDateString("en-US", {
+                            {new Date(entry.changed_at || entry.date || entry.timestamp).toLocaleDateString("en-US", {
                               month: "short",
                               day: "numeric",
                               hour: "2-digit",

@@ -15,6 +15,7 @@ import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 
 import { type Application } from "@/lib/types";
 import { normalizeStatus, STATUS_COLORS } from "@/lib/status";
+import { type Application, type StatusHistoryEntry as StatusUpdate } from "@/lib/types";
 
 interface ApplicationThreadCardProps {
   application: Application;
