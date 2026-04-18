@@ -116,7 +116,7 @@ export default function ThreadedTableRow({ app, statusMap }: Props) {
                             {entryStatus.label}
                           </span>
                           <span className={styles.timelineDate}>
-                            {new Date(entry.changed_at || entry.date).toLocaleDateString("en-US", {
+                            {new Date(entry.changed_at || entry.date || entry.timestamp).toLocaleDateString("en-US", {
                               month: "short",
                               day: "numeric",
                               hour: "2-digit",
