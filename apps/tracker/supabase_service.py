@@ -226,6 +226,23 @@ def get_last_checkpoint(client: Client) -> date:
     return date.fromisoformat(settings.backfill_start_date)
 
 
+def get_last_checkpoint_for_user(client: Client, user_id: str) -> date:
+    try:
+        result = (
+            client.table("applications")
+            .select("processed_at")
+            .eq("user_id", user_id)
+            .order("processed_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data and result.data[0]["processed_at"]:
+            return datetime.fromisoformat(result.data[0]["processed_at"].replace("Z", "+00:00")).date()
+    except Exception:
+        pass
+    return date.fromisoformat(settings.backfill_start_date)
+
+
 def get_existing_thread_ids(client: Client) -> set[str]:
     try:
         result = client.table("applications").select("thread_id").execute()

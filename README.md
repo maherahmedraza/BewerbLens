@@ -30,7 +30,6 @@ graph TB
         CI[CI Pipeline<br/>lint + build + test]
         DF[Deploy Frontend]
         DB_DEPLOY[Deploy Backend]
-        CRON[Pipeline Trigger<br/>Every 4h]
     end
 
     subgraph "Vercel — Free Tier"
@@ -60,7 +59,6 @@ graph TB
     CI -->|on success| DB_DEPLOY
     DF --> DASH
     DB_DEPLOY --> ORCH
-    CRON -->|insert task| SUPDB
 
     DASH -->|API calls| ORCH
     DASH -->|auth + data| SUPDB
@@ -110,7 +108,8 @@ graph TB
 
 ### Premium Dashboard
 - **Pipeline View** — Stage-by-stage progress bars, execution history table, config panel (pause, interval, retention), and per-run log drawer.
-- **Analytics Hub** — Interactive charts for application trends and platform performance.
+- **Analytics Hub** — Interactive charts for application trends plus operational usage telemetry for Gmail, Gemini, Telegram, and sync health.
+- **Secure Integrations** — Gmail OAuth and Telegram linking happen through server-side route handlers so tokens and chat IDs never need to live in client state.
 - **Modern UI** — Glassmorphic design, dark mode support, and responsive layouts.
 
 ---
@@ -122,11 +121,11 @@ BewerbLens/
 ├── .do/                              # DigitalOcean App Spec
 │   └── app.yaml                      # Backend service definition
 ├── .github/
+│   ├── copilot-instructions.md       # Repo assistant guidance
 │   └── workflows/
 │       ├── ci.yml                    # Lint, test, build (reusable)
 │       ├── deploy.yml                # Frontend → Vercel
-│       ├── deploy-backend.yml        # Backend → DigitalOcean
-│       └── pipeline-trigger.yml      # Cron: 4-hour pipeline sync
+│       └── deploy-backend.yml        # Backend → DigitalOcean
 ├── apps/
 │   ├── orchestrator/                 # FastAPI Task Manager
 │   │   ├── main.py                   # Entry point (lifespan, CORS, routers)
@@ -145,7 +144,7 @@ BewerbLens/
 │   │   └── supabase_service.py       # DB operations (pipeline steps, heartbeat)
 │   │
 │   └── dashboard/                    # Next.js 16 Frontend
-│       ├── src/app/                  # App Router pages (pipeline, analytics, …)
+│       ├── src/app/                  # App Router pages + route handlers
 │       ├── src/hooks/usePipeline.ts  # TanStack Query + Realtime hooks
 │       └── src/components/           # UI Components (charts, tables, logs)
 │
@@ -179,6 +178,11 @@ psql "$DATABASE_URL" -f db/migrations/002_hotfix_rls_policies.sql
 psql "$DATABASE_URL" -f db/migrations/003_views_and_rls.sql
 psql "$DATABASE_URL" -f db/migrations/004_application_stats_view.sql
 psql "$DATABASE_URL" -f db/migrations/005_enable_realtime.sql
+psql "$DATABASE_URL" -f db/migrations/006_fix_status_enum_strings.sql
+psql "$DATABASE_URL" -f db/migrations/007_remove_thread_id_unique.sql
+psql "$DATABASE_URL" -f db/migrations/008_fix_pipeline_runs_constraints.sql
+psql "$DATABASE_URL" -f db/migrations/009_reset_for_reprocessing.sql
+psql "$DATABASE_URL" -f db/migrations/010_sync_integrations_analytics.sql
 ```
 
 ### 4. Start Backend Services
@@ -216,7 +220,7 @@ git push → CI (lint + build + test + security scan)
                 └── Backend: DigitalOcean container deploy
 ```
 
-All workflows use **path filtering** — frontend deploys only trigger when `apps/dashboard/**` changes, backend deploys only trigger when `apps/tracker/**` or `apps/orchestrator/**` changes.
+All workflows use **path filtering** — frontend deploys only trigger when `apps/dashboard/**` changes, backend deploys only trigger when `apps/tracker/**` or `apps/orchestrator/**` changes. Recurring incremental syncs are handled by the orchestrator scheduler itself rather than a separate GitHub Actions cron workflow.
 
 See [docs/deployment.md](docs/deployment.md) for full setup instructions.
 
@@ -231,6 +235,10 @@ See [docs/deployment.md](docs/deployment.md) for full setup instructions.
 | [Deployment Guide](docs/deployment.md) | Local, Vercel, DigitalOcean, and CI/CD setup |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues & fixes |
 | [Contributing](CONTRIBUTING.md) | Development guidelines and PR workflow |
+| [Implementation Plan](implementation-plan/IMPLEMENTATION_PLAN.md) | Multi-tenant transformation plan |
+| [Task List](implementation-plan/TASK_LIST.md) | Execution checklist for the transformation |
+| [Environment Variables](implementation-plan/ENVIRONMENT_VARIABLES.md) | Multi-surface env inventory |
+| [Project Report](PROJECT_REPORT.md) | Delivery summary and validation notes |
 
 ---
 

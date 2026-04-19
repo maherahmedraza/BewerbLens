@@ -3,12 +3,10 @@
 import { 
   PauseIcon, 
   PlayIcon, 
-  TrashIcon, 
-  ClockIcon, 
-  ShieldCheckIcon 
 } from "@heroicons/react/24/solid";
 import styles from "./ConfigPanel.module.css";
 import { useCurrentConfig, useUpdateConfig } from "@/hooks/usePipeline";
+import type { PipelineConfig } from "@/lib/types";
 
 export default function ConfigPanel() {
   const { data: config, isLoading } = useCurrentConfig();
@@ -18,7 +16,7 @@ export default function ConfigPanel() {
     return <div className={styles.loading}>Loading Settings...</div>;
   }
 
-  const handleUpdate = (patch: any) => {
+  const handleUpdate = (patch: PipelineConfig) => {
     updateMutation.mutate(patch);
   };
 

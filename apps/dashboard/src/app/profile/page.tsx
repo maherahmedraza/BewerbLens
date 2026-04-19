@@ -1,247 +1,327 @@
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  User Profile & Settings Page                               ║
-// ║                                                             ║
-// ║  Features:                                                  ║
-// ║  • Gmail/Outlook credentials management                     ║
-// ║  • Custom email filters (include/exclude)                   ║
-// ║  • Region selection with default filters                    ║
-// ║  • Telegram notifications config                            ║
-// ╚══════════════════════════════════════════════════════════════╝
-
 "use client";
 
-import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+
+import { createClient } from "@/lib/supabase/client";
+import type { SyncMode, SyncStatus } from "@/lib/types";
+
 import styles from "./profile.module.css";
+
+type Region = "en" | "de" | "fr" | "es";
+type FilterType = "include" | "exclude";
+type FilterField = "subject" | "sender" | "body";
 
 interface EmailFilter {
   id: string;
-  filter_type: 'include' | 'exclude';
-  field: 'subject' | 'sender' | 'body';
+  filter_type: FilterType;
+  field: FilterField;
   pattern: string;
   is_regex: boolean;
   is_active: boolean;
   priority: number;
 }
 
-interface UserProfile {
+interface ProfileState {
   id: string;
   email: string;
   full_name: string | null;
-  region: 'en' | 'de' | 'fr' | 'es';
-  gmail_credentials: any;
+  region: Region;
+  role: "user" | "admin";
+  gmail_connected_at: string | null;
+  telegram_connected_at: string | null;
   telegram_enabled: boolean;
-  telegram_bot_token: string | null;
-  telegram_chat_id: string | null;
+  sync_mode: SyncMode;
+  sync_status: SyncStatus;
+  backfill_start_date: string | null;
+  last_synced_at: string | null;
+}
+
+interface TelegramLinkState {
+  linkCode: string;
+  expiresAt: string;
+  botUsername: string | null;
+  botUrl: string | null;
+}
+
+const PROFILE_SELECT =
+  "id, email, full_name, region, role, gmail_connected_at, telegram_connected_at, telegram_enabled, sync_mode, sync_status, backfill_start_date, last_synced_at";
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Not connected";
+  }
+  return new Date(value).toLocaleString();
 }
 
 export default function ProfileSettingsPage() {
-  const supabase = createClient();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const supabase = useMemo(() => createClient(), []);
+  const [profile, setProfile] = useState<ProfileState | null>(null);
   const [filters, setFilters] = useState<EmailFilter[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [integrationMessage, setIntegrationMessage] = useState("");
+  const [telegramLink, setTelegramLink] = useState<TelegramLinkState | null>(null);
+  const [linkingTelegram, setLinkingTelegram] = useState(false);
 
-  // ══════════════════════════════════════════════════════════════
-  // Load user profile and filters
-  // ══════════════════════════════════════════════════════════════
+  const loadProfile = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setProfile(null);
+      return;
+    }
 
-  useEffect(() => {
-    loadProfile();
-    loadFilters();
-  }, []);
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select(PROFILE_SELECT)
+      .eq("id", user.id)
+      .maybeSingle();
 
-  async function loadProfile() {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    if (!data) {
+      const { error: upsertError } = await supabase
+        .from("user_profiles")
+        .upsert({ id: user.id, email: user.email || "" });
 
-      let { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      // Auto-create profile if it doesn't exist (fallback for missing trigger)
-      if (!data || error?.code === 'PGRST116') {
-        const { data: newProfile, error: upsertError } = await supabase
-          .from('user_profiles')
-          .upsert({ id: user.id, email: user.email! })
-          .select()
-          .single();
-
-        if (upsertError) throw upsertError;
-
-        // Initialize default filters for the new profile
-        await supabase.rpc('initialize_user', {
-          p_user_id: user.id,
-          p_region: 'en'
-        });
-
-        data = newProfile;
-        error = null;
+      if (upsertError) {
+        throw upsertError;
       }
 
-      if (error) throw error;
-      setProfile(data);
-    } catch (error: any) {
-      console.error('Failed to load profile:', error);
-    } finally {
-      setLoading(false);
+      const { error: initializeError } = await supabase.rpc("initialize_user", {
+        p_user_id: user.id,
+        p_region: "en",
+      });
+      if (initializeError) {
+        throw initializeError;
+      }
+
+      const { data: reloadedProfile, error: reloadError } = await supabase
+        .from("user_profiles")
+        .select(PROFILE_SELECT)
+        .eq("id", user.id)
+        .single();
+
+      if (reloadError) {
+        throw reloadError;
+      }
+      setProfile(reloadedProfile as ProfileState);
+      return;
     }
-  }
 
-  async function loadFilters() {
-    try {
-      const { data, error } = await supabase
-        .from('email_filters')
-        .select('*')
-        .order('priority', { ascending: true });
-
-      if (error) throw error;
-      setFilters(data || []);
-    } catch (error: any) {
-      console.error('Failed to load filters:', error);
+    if (error) {
+      throw error;
     }
-  }
 
-  // ══════════════════════════════════════════════════════════════
-  // Save profile
-  // ══════════════════════════════════════════════════════════════
+    setProfile(data as ProfileState);
+  }, [supabase]);
 
-  async function saveProfile(updates: Partial<UserProfile>) {
+  const loadFilters = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("email_filters")
+      .select("id, filter_type, field, pattern, is_regex, is_active, priority")
+      .order("priority", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    setFilters((data || []) as EmailFilter[]);
+  }, [supabase]);
+
+  useEffect(() => {
+    async function loadPage() {
+      try {
+        await Promise.all([loadProfile(), loadFilters()]);
+      } catch (error) {
+        setMessage(getErrorMessage(error));
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadPage();
+  }, [loadFilters, loadProfile]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const gmailState = searchParams.get("gmail");
+      const callbackMessage = searchParams.get("message");
+
+      if (gmailState === "connected") {
+        setIntegrationMessage("Gmail connected. You can start your backfill from Settings.");
+      } else if (gmailState === "error") {
+        setIntegrationMessage(callbackMessage || "Gmail connection failed.");
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  async function saveProfile(updates: Partial<ProfileState>) {
+    if (!profile) {
+      return;
+    }
+
     setSaving(true);
     setMessage("");
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      const { error } = await supabase.from("user_profiles").update(updates).eq("id", profile.id);
+      if (error) {
+        throw error;
+      }
 
-      const { error } = await supabase
-        .from('user_profiles')
-        .update(updates)
-        .eq('id', user.id);
-
-      if (error) throw error;
-
-      setProfile(prev => prev ? { ...prev, ...updates } : null);
-      setMessage("Profile updated successfully!");
-    } catch (error: any) {
-      setMessage(`Failed to save: ${error.message}`);
+      setProfile((current) => (current ? { ...current, ...updates } : current));
+      setMessage("Profile updated.");
+    } catch (error) {
+      setMessage(getErrorMessage(error));
     } finally {
       setSaving(false);
     }
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // Region change handler (resets filters to region defaults)
-  // ══════════════════════════════════════════════════════════════
+  async function changeRegion(newRegion: Region) {
+    if (!profile || !window.confirm("Changing region resets your default email filters. Continue?")) {
+      return;
+    }
 
-  async function changeRegion(newRegion: string) {
-    if (!confirm(
-      "Changing region will reset your email filters to defaults. Continue?"
-    )) return;
+    setSaving(true);
+    setMessage("");
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      // Call database function to reinitialize user with new region
-      const { error } = await supabase.rpc('initialize_user', {
-        p_user_id: user.id,
-        p_region: newRegion
+      const { error } = await supabase.rpc("initialize_user", {
+        p_user_id: profile.id,
+        p_region: newRegion,
       });
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
-      setProfile(prev => prev ? { ...prev, region: newRegion as any } : null);
-      loadFilters(); // Reload filters
-      setMessage(`Region changed to ${newRegion.toUpperCase()}. Default filters applied.`);
-    } catch (error: any) {
-      setMessage(`Failed to change region: ${error.message}`);
+      setProfile((current) => (current ? { ...current, region: newRegion } : current));
+      await loadFilters();
+      setMessage(`Region updated to ${newRegion.toUpperCase()}.`);
+    } catch (error) {
+      setMessage(getErrorMessage(error));
+    } finally {
+      setSaving(false);
     }
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // Filter management
-  // ══════════════════════════════════════════════════════════════
-
   async function addFilter() {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+    if (!profile) {
+      return;
+    }
 
+    try {
       const { data, error } = await supabase
-        .from('email_filters')
+        .from("email_filters")
         .insert({
-          user_id: user.id,
-          filter_type: 'include',
-          field: 'subject',
-          pattern: '',
+          user_id: profile.id,
+          filter_type: "include",
+          field: "subject",
+          pattern: "",
           is_regex: false,
           is_active: true,
-          priority: filters.length
+          priority: filters.length,
         })
-        .select()
+        .select("id, filter_type, field, pattern, is_regex, is_active, priority")
         .single();
 
-      if (error) throw error;
-      setFilters([...filters, data]);
-    } catch (error: any) {
-      setMessage(`Failed to add filter: ${error.message}`);
+      if (error) {
+        throw error;
+      }
+
+      setFilters((current) => [...current, data as EmailFilter]);
+    } catch (error) {
+      setMessage(getErrorMessage(error));
     }
   }
 
   async function updateFilter(filterId: string, updates: Partial<EmailFilter>) {
     try {
-      const { error } = await supabase
-        .from('email_filters')
-        .update(updates)
-        .eq('id', filterId);
+      const { error } = await supabase.from("email_filters").update(updates).eq("id", filterId);
+      if (error) {
+        throw error;
+      }
 
-      if (error) throw error;
-
-      setFilters(filters.map(f => 
-        f.id === filterId ? { ...f, ...updates } : f
-      ));
-    } catch (error: any) {
-      setMessage(`Failed to update filter: ${error.message}`);
+      setFilters((current) =>
+        current.map((filter) => (filter.id === filterId ? { ...filter, ...updates } : filter))
+      );
+    } catch (error) {
+      setMessage(getErrorMessage(error));
     }
   }
 
   async function deleteFilter(filterId: string) {
     try {
-      const { error } = await supabase
-        .from('email_filters')
-        .delete()
-        .eq('id', filterId);
+      const { error } = await supabase.from("email_filters").delete().eq("id", filterId);
+      if (error) {
+        throw error;
+      }
 
-      if (error) throw error;
-      setFilters(filters.filter(f => f.id !== filterId));
-    } catch (error: any) {
-      setMessage(`Failed to delete filter: ${error.message}`);
+      setFilters((current) => current.filter((filter) => filter.id !== filterId));
+    } catch (error) {
+      setMessage(getErrorMessage(error));
     }
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // Gmail OAuth flow (placeholder - needs Google OAuth setup)
-  // ══════════════════════════════════════════════════════════════
-
   function connectGmail() {
-    // TODO: Implement Google OAuth flow
-    // 1. Redirect to Google OAuth consent screen
-    // 2. Get authorization code
-    // 3. Exchange for tokens
-    // 4. Store encrypted tokens in user_profiles.gmail_credentials
-    
-    alert("Gmail OAuth integration - Coming soon!\n\nYou'll be able to:\n1. Authorize BewerbLens to access Gmail\n2. Store encrypted credentials securely\n3. Auto-sync emails on schedule");
+    window.location.assign("/api/integrations/google/start?next=/profile");
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // Render
-  // ══════════════════════════════════════════════════════════════
+  async function startTelegramLink() {
+    setLinkingTelegram(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/integrations/telegram/link/start", {
+        method: "POST",
+      });
+      const payload = (await response.json()) as
+        | {
+            error?: string;
+            link_code: string;
+            expires_at: string;
+            bot_username: string | null;
+            bot_url: string | null;
+          }
+        | { error: string };
+
+      if (!response.ok || !("link_code" in payload)) {
+        throw new Error(("error" in payload && payload.error) || "Failed to create Telegram link code.");
+      }
+
+      setTelegramLink({
+        linkCode: payload.link_code,
+        expiresAt: payload.expires_at,
+        botUsername: payload.bot_username,
+        botUrl: payload.bot_url,
+      });
+      setMessage("Telegram link code created. Send it to your bot to connect notifications.");
+    } catch (error) {
+      setMessage(getErrorMessage(error));
+    } finally {
+      setLinkingTelegram(false);
+    }
+  }
+
+  async function copyTelegramCode() {
+    if (!telegramLink) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(telegramLink.linkCode);
+    setMessage("Telegram link code copied.");
+  }
 
   if (loading) {
     return <div className={styles.loading}>Loading profile...</div>;
@@ -250,22 +330,28 @@ export default function ProfileSettingsPage() {
   if (!profile) {
     return (
       <div className={styles.error}>
-        <p>Could not load your profile. Please sign in and try again.</p>
-        <a href="/login" className={styles.loginLink}>Go to Login</a>
+        <p>Could not load your profile. Please sign in again.</p>
+        <Link href="/login" className={styles.helpLink}>
+          Go to Login
+        </Link>
       </div>
     );
   }
+
+  const gmailConnected = Boolean(profile.gmail_connected_at);
+  const telegramConnected = Boolean(profile.telegram_connected_at);
 
   return (
     <div className={styles.profileContainer}>
       <h1>Profile & Settings</h1>
 
-      {message && <div className={styles.message}>{message}</div>}
+      {message || integrationMessage ? (
+        <div className={styles.message}>{message || integrationMessage}</div>
+      ) : null}
 
-      {/* ═══ SECTION 1: Basic Info ═══ */}
       <section className={styles.section}>
         <h2>Basic Information</h2>
-        
+
         <div className={styles.formGroup}>
           <label>Email</label>
           <input type="text" value={profile.email} disabled />
@@ -275,9 +361,11 @@ export default function ProfileSettingsPage() {
           <label>Full Name</label>
           <input
             type="text"
-            value={profile.full_name || ''}
-            onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-            onBlur={() => saveProfile({ full_name: profile.full_name })}
+            value={profile.full_name || ""}
+            onChange={(event) =>
+              setProfile((current) => (current ? { ...current, full_name: event.target.value } : current))
+            }
+            onBlur={() => void saveProfile({ full_name: profile.full_name })}
           />
         </div>
 
@@ -285,54 +373,107 @@ export default function ProfileSettingsPage() {
           <label>Region / Language</label>
           <select
             value={profile.region}
-            onChange={(e) => changeRegion(e.target.value)}
+            disabled={saving}
+            onChange={(event) => void changeRegion(event.target.value as Region)}
           >
             <option value="en">English (EN)</option>
             <option value="de">German (DE)</option>
             <option value="fr">French (FR)</option>
             <option value="es">Spanish (ES)</option>
           </select>
-          <p className={styles.helpText}>
-            Changes region-specific email filters (keywords for application emails)
-          </p>
+          <p className={styles.helpText}>This refreshes the default include and exclude filters.</p>
         </div>
       </section>
 
-      {/* ═══ SECTION 2: Email Providers ═══ */}
       <section className={styles.section}>
-        <h2>Email Providers</h2>
-        
+        <h2>Integrations</h2>
+
         <div className={styles.providerCard}>
           <div className={styles.providerHeader}>
             <h3>Gmail</h3>
-            <span className={profile.gmail_credentials ? styles.statusConnected : styles.statusDisconnected}>
-              {profile.gmail_credentials ? "Connected" : "Not connected"}
+            <span className={gmailConnected ? styles.statusConnected : styles.statusDisconnected}>
+              {gmailConnected ? "Connected" : "Not connected"}
             </span>
           </div>
-          <p>Connect your Gmail account to automatically track job application emails.</p>
-          <button onClick={connectGmail} className={styles.btnPrimary}>
-            {profile.gmail_credentials ? "Reconnect Gmail" : "Connect Gmail"}
-          </button>
+          <p>Authorize Gmail once. BewerbLens stores the refresh token server-side and keeps sync controls in Settings.</p>
+          <p className={styles.helpText}>
+            Connected: {formatDate(profile.gmail_connected_at)} · Sync mode: {profile.sync_mode} · Status: {profile.sync_status}
+          </p>
+          <div className={styles.inlineActions}>
+            <button onClick={connectGmail} className={styles.btnPrimary}>
+              {gmailConnected ? "Reconnect Gmail" : "Connect Gmail"}
+            </button>
+            <Link href="/settings" className={styles.btnSecondary}>
+              Manage Sync
+            </Link>
+          </div>
         </div>
 
-        <div className={`${styles.providerCard} ${styles.disabled}`}>
+        <div className={styles.providerCard}>
           <div className={styles.providerHeader}>
-            <h3>Outlook</h3>
-            <span className="badge">Coming Soon</span>
+            <h3>Telegram Notifications</h3>
+            <span className={telegramConnected ? styles.statusConnected : styles.statusDisconnected}>
+              {telegramConnected ? "Connected" : "Not connected"}
+            </span>
           </div>
-          <p>Microsoft Outlook integration will be available in a future update.</p>
+          <p>Link your Telegram chat with a one-time code instead of pasting bot tokens or chat IDs into the browser.</p>
+          <p className={styles.helpText}>Connected: {formatDate(profile.telegram_connected_at)}</p>
+
+          <label className={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={profile.telegram_enabled}
+              disabled={!telegramConnected || saving}
+              onChange={(event) => void saveProfile({ telegram_enabled: event.target.checked })}
+            />
+            Enable Telegram notifications
+          </label>
+
+          <div className={styles.inlineActions}>
+            <button
+              onClick={() => void startTelegramLink()}
+              className={styles.btnPrimary}
+              disabled={linkingTelegram}
+            >
+              {telegramConnected ? "Relink Telegram" : "Link Telegram"}
+            </button>
+          </div>
+
+          {telegramLink ? (
+            <div className={styles.noticeCard}>
+              <p className={styles.helpText}>Link code (expires {formatDate(telegramLink.expiresAt)})</p>
+              <div className={styles.codeRow}>
+                <code className={styles.codeBlock}>{telegramLink.linkCode}</code>
+                <button onClick={() => void copyTelegramCode()} className={styles.btnSecondary}>
+                  Copy Code
+                </button>
+              </div>
+              {telegramLink.botUrl ? (
+                <a
+                  href={telegramLink.botUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={styles.helpLink}
+                >
+                  Open @{telegramLink.botUsername} →
+                </a>
+              ) : (
+                <p className={styles.helpText}>
+                  Send this code to your Telegram bot to complete the link.
+                </p>
+              )}
+            </div>
+          ) : null}
         </div>
       </section>
 
-      {/* ═══ SECTION 3: Email Filters ═══ */}
       <section className={styles.section}>
         <h2>Email Filters</h2>
         <p className={styles.helpText}>
-          Define rules to automatically include or exclude emails from tracking.
-          Default filters are applied based on your region.
+          Include and exclude rules run before classification so you can keep noisy alerts out of the pipeline.
         </p>
 
-        <button onClick={addFilter} className={styles.btnSecondary}>
+        <button onClick={() => void addFilter()} className={styles.btnSecondary}>
           <PlusIcon className={styles.icon} /> Add Filter
         </button>
 
@@ -342,9 +483,9 @@ export default function ProfileSettingsPage() {
               <div className={styles.filterRow}>
                 <select
                   value={filter.filter_type}
-                  onChange={(e) => updateFilter(filter.id, { 
-                    filter_type: e.target.value as 'include' | 'exclude' 
-                  })}
+                  onChange={(event) =>
+                    void updateFilter(filter.id, { filter_type: event.target.value as FilterType })
+                  }
                   className={styles.filterType}
                 >
                   <option value="include">Include</option>
@@ -355,9 +496,9 @@ export default function ProfileSettingsPage() {
 
                 <select
                   value={filter.field}
-                  onChange={(e) => updateFilter(filter.id, { 
-                    field: e.target.value as 'subject' | 'sender' | 'body'
-                  })}
+                  onChange={(event) =>
+                    void updateFilter(filter.id, { field: event.target.value as FilterField })
+                  }
                 >
                   <option value="subject">Subject</option>
                   <option value="sender">Sender</option>
@@ -369,8 +510,8 @@ export default function ProfileSettingsPage() {
                 <input
                   type="text"
                   value={filter.pattern}
-                  onChange={(e) => updateFilter(filter.id, { pattern: e.target.value })}
-                  placeholder="e.g. bewerbung, application"
+                  onChange={(event) => void updateFilter(filter.id, { pattern: event.target.value })}
+                  placeholder="e.g. application, bewerbung"
                   className={styles.filterPattern}
                 />
 
@@ -378,7 +519,9 @@ export default function ProfileSettingsPage() {
                   <input
                     type="checkbox"
                     checked={filter.is_regex}
-                    onChange={(e) => updateFilter(filter.id, { is_regex: e.target.checked })}
+                    onChange={(event) =>
+                      void updateFilter(filter.id, { is_regex: event.target.checked })
+                    }
                   />
                   Regex
                 </label>
@@ -387,13 +530,15 @@ export default function ProfileSettingsPage() {
                   <input
                     type="checkbox"
                     checked={filter.is_active}
-                    onChange={(e) => updateFilter(filter.id, { is_active: e.target.checked })}
+                    onChange={(event) =>
+                      void updateFilter(filter.id, { is_active: event.target.checked })
+                    }
                   />
                   Active
                 </label>
 
-                <button 
-                  onClick={() => deleteFilter(filter.id)}
+                <button
+                  onClick={() => void deleteFilter(filter.id)}
                   className={styles.btnIconDanger}
                   title="Delete filter"
                 >
@@ -404,76 +549,6 @@ export default function ProfileSettingsPage() {
           ))}
         </div>
       </section>
-
-      {/* ═══ SECTION 4: Telegram Notifications ═══ */}
-      <section className={styles.section}>
-        <h2>Telegram Notifications</h2>
-
-        <label className={styles.checkboxLabel}>
-          <input
-            type="checkbox"
-            checked={profile.telegram_enabled}
-            onChange={(e) => saveProfile({ telegram_enabled: e.target.checked })}
-          />
-          Enable Telegram notifications
-        </label>
-
-        {profile.telegram_enabled && (
-          <>
-            <div className={styles.formGroup}>
-              <label>Bot Token</label>
-              <input
-                type="text"
-                value={profile.telegram_bot_token || ''}
-                onChange={(e) => setProfile({ ...profile, telegram_bot_token: e.target.value })}
-                onBlur={() => saveProfile({ telegram_bot_token: profile.telegram_bot_token })}
-                placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-              />
-            </div>
-
-            <div className={styles.formGroup}>
-              <label>Chat ID</label>
-              <input
-                type="text"
-                value={profile.telegram_chat_id || ''}
-                onChange={(e) => setProfile({ ...profile, telegram_chat_id: e.target.value })}
-                onBlur={() => saveProfile({ telegram_chat_id: profile.telegram_chat_id })}
-                placeholder="123456789"
-              />
-            </div>
-
-            <a 
-              href="https://core.telegram.org/bots#how-do-i-create-a-bot" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className={styles.helpLink}
-            >
-              How to get Bot Token and Chat ID →
-            </a>
-          </>
-        )}
-      </section>
-
-      {/* ═══ SECTION 5: GDPR ═══ */}
-      <section className={`${styles.section} ${styles.dangerZone}`}>
-        <h2>Data Management</h2>
-        
-        <div className={styles.formGroup}>
-          <label>Export Your Data</label>
-          <p>Download all your application data as JSON.</p>
-          <button className={styles.btnSecondary}>Export Data</button>
-        </div>
-
-        <div className={styles.formGroup}>
-          <label>Delete Account</label>
-          <p className={styles.dangerText}>
-            This will permanently delete your account and all associated data. 
-            This action cannot be undone.
-          </p>
-          <button className={styles.btnDanger}>Delete Account</button>
-        </div>
-      </section>
     </div>
   );
 }
-

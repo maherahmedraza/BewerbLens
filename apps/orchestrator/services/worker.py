@@ -108,7 +108,7 @@ def worker_loop(worker_id: str):
 
                 # Actualizar también pipeline_runs si hay run_id asociado
                 if run_id:
-                    _finalize_run(run_id, status, result_stats, started_at, ended_at, duration_ms)
+                    _finalize_run(run_id, status, result_stats, started_at, ended_at, duration_ms, task)
 
                 logger.info(f"Task {task_id} {status} in {duration_ms}ms")
 
@@ -139,6 +139,7 @@ def _finalize_run(
     started_at: datetime,
     ended_at: datetime,
     duration_ms: int,
+    task: dict,
 ):
     """Finaliza el registro en pipeline_runs con estadísticas y duración."""
     try:
@@ -156,6 +157,7 @@ def _finalize_run(
             data["error_message"] = str(result_stats["error"])[:500]
 
         supabase.table("pipeline_runs").update(data).eq("id", run_id).execute()
+        _update_user_sync_state(task, run_status, ended_at, result_stats.get("error", ""))
 
         # Mark failed step if pipeline crashed
         if run_status == "failed":
@@ -164,6 +166,32 @@ def _finalize_run(
             _mark_cancelled_steps(run_id, result_stats.get("error", "Cancelled by user"))
     except Exception as e:
         logger.warning(f"Failed to finalize run {run_id}: {e}")
+
+
+def _update_user_sync_state(task: dict, run_status: str, ended_at: datetime, error_message: str):
+    user_id = task.get("user_id")
+    if not user_id:
+        return
+
+    sync_mode = ((task.get("parameters") or {}).get("sync_mode")) or "backfill"
+    if run_status == "success":
+        update_data = {
+            "last_synced_at": ended_at.isoformat(),
+            "sync_status": "complete",
+            "sync_error": None,
+        }
+        if sync_mode == "backfill":
+            update_data["sync_mode"] = "incremental"
+    else:
+        update_data = {
+            "sync_status": "failed",
+            "sync_error": str(error_message)[:500] if error_message else "Pipeline run failed.",
+        }
+
+    try:
+        supabase.table("user_profiles").update(update_data).eq("id", user_id).execute()
+    except Exception as error:
+        logger.warning(f"Failed to update sync state for user {user_id}: {error}")
 
 
 def _mark_failed_steps(run_id: str, error_msg: str):

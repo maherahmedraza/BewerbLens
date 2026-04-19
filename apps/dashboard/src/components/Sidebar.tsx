@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import styles from "./Sidebar.module.css";
@@ -26,7 +26,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [profile, setProfile] = useState<{ full_name: string | null; email: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -55,10 +55,16 @@ export default function Sidebar() {
     loadProfile();
   }, [supabase]);
 
-  // Close sidebar on route change (mobile)
-  useEffect(() => {
+  function isActivePath(href: string) {
+    if (href === "/") {
+      return pathname === href;
+    }
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
+  function handleNavigate() {
     setMobileOpen(false);
-  }, [pathname]);
+  }
 
   return (
     <>
@@ -92,12 +98,13 @@ export default function Sidebar() {
 
         <nav className={styles.nav}>
           {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = isActivePath(item.href);
             return (
               <Link
                 key={item.name}
                 href={item.href}
                 className={`${styles.navLink} ${isActive ? styles.active : ""}`}
+                onClick={handleNavigate}
               >
                 <item.icon className={styles.icon} />
                 <span>{item.name}</span>
@@ -107,7 +114,11 @@ export default function Sidebar() {
         </nav>
 
         <div className={styles.footer}>
-          <div className={styles.userSection}>
+          <Link
+            href="/profile"
+            className={`${styles.userLink} ${isActivePath("/profile") ? styles.active : ""}`}
+            onClick={handleNavigate}
+          >
             <div className={styles.avatar}>
               {profile?.full_name?.charAt(0) || profile?.email?.charAt(0) || "?"}
             </div>
@@ -119,9 +130,9 @@ export default function Sidebar() {
                   <p className={styles.userName}>{profile?.full_name || "User"}</p>
                   <p className={styles.userRole}>{profile?.email}</p>
                 </>
-              )}
+                )}
             </div>
-          </div>
+          </Link>
         </div>
       </aside>
     </>

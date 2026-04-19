@@ -77,6 +77,90 @@ export interface ConversionFunnel {
   count: number;
 }
 
+export interface PipelineConfig {
+  retention_days?: number;
+  schedule_interval_hours?: number;
+  is_paused?: boolean;
+}
+
+export type UserRole = "user" | "admin";
+export type SyncMode = "backfill" | "incremental";
+export type SyncStatus = "pending" | "running" | "complete" | "failed";
+
+export interface UserSyncProfile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: UserRole;
+  sync_mode: SyncMode;
+  sync_status: SyncStatus;
+  last_synced_at: string | null;
+}
+
+export interface UsageMetricRow {
+  user_id: string;
+  recorded_for: string;
+  emails_processed: number;
+  gmail_api_calls: number;
+  ai_requests: number;
+  ai_input_tokens_est: number;
+  ai_output_tokens_est: number;
+  ai_estimated_cost_usd: number;
+  telegram_notifications_sent: number;
+  telegram_notifications_failed: number;
+  success_count: number;
+  failure_count: number;
+  error_categories: Record<string, number>;
+}
+
+export interface UsageSummaryCard {
+  totalEmailsAllTime: number;
+  totalEmailsLast30Days: number;
+  gmailApiCallsWindow: number;
+  aiRequestsWindow: number;
+  aiInputTokensWindow: number;
+  aiOutputTokensWindow: number;
+  aiEstimatedCostUsdWindow: number;
+  telegramNotificationsSentWindow: number;
+  telegramNotificationsFailedWindow: number;
+  successRateWindow: number;
+  latestSyncAt: string | null;
+  syncStatusBreakdown: Record<string, number>;
+  errorCategoriesWindow: Record<string, number>;
+}
+
+export interface UsageMetricPoint {
+  recorded_for: string;
+  emails_processed: number;
+  gmail_api_calls: number;
+  ai_requests: number;
+  ai_estimated_cost_usd: number;
+  telegram_notifications_sent: number;
+  success_count: number;
+  failure_count: number;
+}
+
+export interface UserBreakdownRow {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  sync_mode: SyncMode;
+  sync_status: SyncStatus;
+  last_synced_at: string | null;
+  emails_processed_last_30_days: number;
+  gmail_api_calls_last_30_days: number;
+  ai_estimated_cost_usd_last_30_days: number;
+  telegram_notifications_sent_last_30_days: number;
+  success_rate_last_30_days: number;
+}
+
+export interface UsageAnalyticsResponse {
+  viewerRole: UserRole;
+  summary: UsageSummaryCard;
+  timeSeries: UsageMetricPoint[];
+  perUserBreakdown: UserBreakdownRow[];
+}
+
 export type PipelineRunStatus =
   | "running"
   | "pending"

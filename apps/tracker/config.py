@@ -22,10 +22,14 @@ class Settings(BaseSettings):
     user_email: str = Field(default="")
     gmail_oauth_redirect_uri: str = Field(default="http://localhost:3000/auth/gmail/callback")
     encryption_key: str = Field(default="")
+    encryption_secret: str = Field(default="")
+    gmail_daily_quota_units: int = Field(default=1_000_000_000, ge=1)
 
     # ── Gemini AI ──────────────────────────────────────────
     gemini_api_key: str = Field(default="")
     gemini_model: str = Field(default="gemini-3.1-flash-lite-preview")
+    gemini_input_cost_per_million: float = Field(default=0.10, ge=0.0)
+    gemini_output_cost_per_million: float = Field(default=0.40, ge=0.0)
 
     # ── Supabase ───────────────────────────────────────────
     supabase_url: str = Field(default="")

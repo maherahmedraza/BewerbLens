@@ -84,3 +84,15 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+.usageSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.usageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

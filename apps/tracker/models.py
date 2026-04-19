@@ -43,6 +43,18 @@ class PipelineStage(str, Enum):
     PERSISTENCE = "persistence"
 
 
+class SyncMode(str, Enum):
+    BACKFILL = "backfill"
+    INCREMENTAL = "incremental"
+
+
+class SyncStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
 PIPELINE_STAGE_ORDER: tuple[PipelineStage, ...] = (
     PipelineStage.INGESTION,
     PipelineStage.ANALYSIS,
@@ -92,12 +104,19 @@ class IngestionStageStats(BaseModel):
     total_fetched: int = 0
     total_recovered: int = 0
     total_after_filters: int = 0
+    gmail_api_calls: int = 0
+    gmail_remaining_quota_estimate: int | None = None
+    unread_only: bool = False
 
 
 class AnalysisStageStats(BaseModel):
     email_ids: list[str] = Field(default_factory=list)
     classifications: list[EmailClassification] = Field(default_factory=list)
     total_classified: int = 0
+    ai_requests: int = 0
+    ai_input_tokens_est: int = 0
+    ai_output_tokens_est: int = 0
+    ai_estimated_cost_usd: float = 0.0
 
 
 class PersistenceStageStats(BaseModel):
@@ -106,6 +125,8 @@ class PersistenceStageStats(BaseModel):
     updated: int = 0
     skipped: int = 0
     errors: int = 0
+    notifications_sent: int = 0
+    notifications_failed: int = 0
     report: Optional["PipelineRunReport"] = Field(default=None, exclude=True)
 
 

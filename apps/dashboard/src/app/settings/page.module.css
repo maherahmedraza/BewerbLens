@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: 32px;
-  max-width: 600px;
+  max-width: 760px;
 }
 
 .heading {
@@ -68,6 +68,13 @@
   gap: 16px;
 }
 
+.syncGrid,
+.fieldGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .configRow {
   display: flex;
   justify-content: space-between;
@@ -75,9 +82,26 @@
   gap: 16px;
 }
 
+.statusCard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+}
+
 .label {
   font-size: 14px;
   font-weight: 600;
+  color: var(--text-primary);
+}
+
+.statusValue {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
@@ -92,9 +116,47 @@
   min-width: 180px;
 }
 
+.input {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 14px;
+  min-width: 180px;
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.helperRow {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.helperText {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.actionsRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.errorText {
+  color: var(--accent-red);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .message {
@@ -104,4 +166,16 @@
   border-radius: var(--radius);
   font-size: 14px;
   color: var(--text-secondary);
+}
+
+@media (max-width: 640px) {
+  .configRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .select,
+  .input {
+    width: 100%;
+  }
 }

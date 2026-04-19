@@ -1,31 +1,11 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
 import { SunIcon, MoonIcon } from "@heroicons/react/24/outline";
 
 export function ThemeToggle() {
   const { setTheme, resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return (
-      <button
-        style={{
-          width: 40, height: 40, background: "transparent", border: "none",
-          borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        <span style={{ opacity: 0 }}><SunIcon width={20} height={20} /></span>
-      </button>
-    );
-  }
-
-  const isDark = resolvedTheme === "dark";
+  const isDark = (resolvedTheme || "light") === "dark";
 
   return (
     <button

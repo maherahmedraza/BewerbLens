@@ -94,6 +94,21 @@
   border-radius: 12px;
 }
 
+.userLink {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.2s ease;
+}
+
+.userLink:hover {
+  background-color: var(--bg-hover);
+}
+
 .avatar {
   background-color: var(--accent-blue);
   color: white;

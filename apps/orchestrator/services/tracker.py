@@ -11,8 +11,8 @@ from datetime import date, datetime, timezone
 
 from loguru import logger
 
-from models import PIPELINE_STAGE_ORDER, PipelineStage
-from supabase_service import create_pipeline_run, get_client, get_last_checkpoint, init_pipeline_steps
+from models import PIPELINE_STAGE_ORDER, PipelineStage, SyncMode
+from supabase_service import create_pipeline_run, get_client, get_last_checkpoint_for_user, init_pipeline_steps
 from tracker import PipelineCancelledError, run_pipeline_multiuser
 
 
@@ -36,6 +36,7 @@ def run_tracker_task(payload: dict) -> dict:
         run_id=payload.get("run_id", "orchestrated"),
         internal_id=payload.get("internal_id"),
         start_stage=payload.get("start_stage", PipelineStage.INGESTION.value),
+        sync_mode=payload.get("sync_mode", SyncMode.BACKFILL.value),
     )
 
 
@@ -53,9 +54,13 @@ class TrackerService:
         since_date: date | None = None,
     ) -> dict:
         client = get_client()
+        user_profile = self._load_user_profile(client, user_id)
+        sync_mode = self._resolve_sync_mode(user_profile, triggered_by)
 
         if since_date is None:
-            since_date = get_last_checkpoint(client)
+            since_date = self._resolve_since_date(client, user_id, user_profile, sync_mode)
+
+        self._mark_sync_running(client, user_id, sync_mode, since_date if sync_mode == SyncMode.BACKFILL else None)
 
         run_label = f"RUN-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
         internal_id, _started_at = create_pipeline_run(
@@ -77,6 +82,7 @@ class TrackerService:
             since_date=since_date,
             triggered_by=triggered_by,
             start_stage=PipelineStage.INGESTION,
+            sync_mode=sync_mode,
         )
 
         logger.info(f"Pipeline run enqueued: {run_label} (id={internal_id})")
@@ -142,7 +148,13 @@ class TrackerService:
     async def trigger_scheduled_run(self):
         try:
             client = get_client()
-            users = client.table("user_profiles").select("id").not_.is_("gmail_credentials", "null").execute()
+            users = (
+                client.table("user_profiles")
+                .select("id")
+                .not_.is_("gmail_credentials", "null")
+                .eq("sync_mode", SyncMode.INCREMENTAL.value)
+                .execute()
+            )
 
             if not users.data:
                 logger.info("No users with active gmail_credentials found for scheduling.")
@@ -167,6 +179,7 @@ class TrackerService:
         since_date: date | None,
         triggered_by: str,
         start_stage: PipelineStage,
+        sync_mode: SyncMode,
     ) -> None:
         task_data = {
             "task_type": "sync",
@@ -179,10 +192,51 @@ class TrackerService:
                 "internal_id": run_id,
                 "triggered_by": triggered_by,
                 "start_stage": start_stage.value,
+                "sync_mode": sync_mode.value,
             },
             "run_id": run_id,
         }
         client.table("pipeline_tasks").insert(task_data).execute()
+
+    def _load_user_profile(self, client, user_id: str) -> dict:
+        result = client.table("user_profiles").select("*").eq("id", user_id).limit(1).execute()
+        if not result.data:
+            raise RuntimeError("User profile not found.")
+        return result.data[0]
+
+    def _resolve_sync_mode(self, user_profile: dict, triggered_by: str) -> SyncMode:
+        if triggered_by == "backfill":
+            return SyncMode.BACKFILL
+        if triggered_by in {"incremental", "scheduler"}:
+            return SyncMode.INCREMENTAL
+
+        stored_mode = user_profile.get("sync_mode") or SyncMode.BACKFILL.value
+        try:
+            return SyncMode(stored_mode)
+        except ValueError:
+            return SyncMode.BACKFILL
+
+    def _resolve_since_date(self, client, user_id: str, user_profile: dict, sync_mode: SyncMode) -> date:
+        if sync_mode == SyncMode.BACKFILL:
+            backfill_start = user_profile.get("backfill_start_date")
+            if backfill_start:
+                return date.fromisoformat(str(backfill_start))
+            return get_last_checkpoint_for_user(client, user_id)
+
+        last_synced_at = user_profile.get("last_synced_at")
+        if last_synced_at:
+            return datetime.fromisoformat(str(last_synced_at).replace("Z", "+00:00")).date()
+        return get_last_checkpoint_for_user(client, user_id)
+
+    def _mark_sync_running(self, client, user_id: str, sync_mode: SyncMode, backfill_start_date: date | None) -> None:
+        update_data = {
+            "sync_mode": sync_mode.value,
+            "sync_status": "running",
+            "sync_error": None,
+        }
+        if backfill_start_date is not None:
+            update_data["backfill_start_date"] = backfill_start_date.isoformat()
+        client.table("user_profiles").update(update_data).eq("id", user_id).execute()
 
     def _resolve_run(self, client, run_identifier: str) -> dict:
         try:

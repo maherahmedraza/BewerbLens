@@ -1,46 +1,162 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import api from "@/lib/api";
-import { useState, useEffect } from "react";
+import type { PipelineConfig, SyncMode, SyncStatus } from "@/lib/types";
+import { createClient } from "@/lib/supabase/client";
+
 import styles from "./page.module.css";
 
-interface PipelineConfig {
-  schedule_interval_hours: number;
-  is_paused: boolean;
-  retention_days: number;
+interface SyncSettings {
+  id: string;
+  gmail_connected_at: string | null;
+  backfill_start_date: string | null;
+  last_synced_at: string | null;
+  sync_mode: SyncMode;
+  sync_status: SyncStatus;
+  sync_error: string | null;
+}
+
+const PROFILE_SELECT =
+  "id, gmail_connected_at, backfill_start_date, last_synced_at, sync_mode, sync_status, sync_error";
+
+function getErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "response" in error) {
+    const response = (error as { response?: { data?: { detail?: string } } }).response;
+    if (response?.data?.detail) {
+      return response.data.detail;
+    }
+  }
+
+  return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Not available";
+  }
+  return new Date(value).toLocaleString();
 }
 
 export default function SettingsPage() {
+  const supabase = useMemo(() => createClient(), []);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState<PipelineConfig | null>(null);
+  const [syncSettings, setSyncSettings] = useState<SyncSettings | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
+  const [syncLoading, setSyncLoading] = useState(true);
+  const [backfillStartDate, setBackfillStartDate] = useState("");
 
-  useEffect(() => {
-    loadConfig();
-  }, []);
-
-  async function loadConfig() {
+  const loadConfig = useCallback(async () => {
     try {
-      const res = await api.get("/config/");
-      setConfig(res.data);
+      const response = await api.get("/config/");
+      setConfig(response.data as PipelineConfig);
     } catch {
       setConfig(null);
     } finally {
       setConfigLoading(false);
     }
-  }
+  }, []);
+
+  const loadSyncSettings = useCallback(async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setSyncSettings(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("user_profiles")
+        .select(PROFILE_SELECT)
+        .eq("id", user.id)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const profile = data as SyncSettings;
+      setSyncSettings(profile);
+      setBackfillStartDate(profile.backfill_start_date || new Date().toISOString().slice(0, 10));
+    } catch (error) {
+      setMessage(getErrorMessage(error));
+    } finally {
+      setSyncLoading(false);
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void Promise.all([loadConfig(), loadSyncSettings()]);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loadConfig, loadSyncSettings]);
 
   async function updateConfig(patch: Partial<PipelineConfig>) {
     setLoading(true);
     setMessage("");
+
     try {
-      const res = await api.patch("/config/", patch);
-      setConfig(res.data);
+      const response = await api.patch("/config/", patch);
+      setConfig(response.data as PipelineConfig);
       setMessage("Pipeline configuration updated.");
-    } catch (error: any) {
-      setMessage(`Update failed: ${error.response?.data?.detail || error.message}`);
+    } catch (error) {
+      setMessage(`Update failed: ${getErrorMessage(error)}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function triggerBackfill() {
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/sync/backfill", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ startDate: backfillStartDate }),
+      });
+      const payload = (await response.json()) as { error?: string; message?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to queue backfill sync.");
+      }
+
+      await loadSyncSettings();
+      setMessage(payload.message || "Backfill sync queued.");
+    } catch (error) {
+      setMessage(getErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function triggerIncremental() {
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/sync/incremental", {
+        method: "POST",
+      });
+      const payload = (await response.json()) as { error?: string; message?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to queue incremental sync.");
+      }
+
+      await loadSyncSettings();
+      setMessage(payload.message || "Incremental sync queued.");
+    } catch (error) {
+      setMessage(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -49,72 +165,151 @@ export default function SettingsPage() {
   async function handleExport() {
     setLoading(true);
     setMessage("");
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("applications")
-        .select("*");
 
-      if (error) throw error;
+    try {
+      const { data, error } = await supabase.from("applications").select("*");
+      if (error) {
+        throw error;
+      }
 
       const blob = new Blob([JSON.stringify(data, null, 2)], {
         type: "application/json",
       });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "applications-export.json";
-      a.click();
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "applications-export.json";
+      anchor.click();
       URL.revokeObjectURL(url);
-      setMessage("Data exported successfully");
-    } catch (error: any) {
-      setMessage(`Export failed: ${error.message}`);
+      setMessage("Data exported successfully.");
+    } catch (error) {
+      setMessage(`Export failed: ${getErrorMessage(error)}`);
     } finally {
       setLoading(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm("Are you sure? This will delete ALL your data. This cannot be undone.")) {
+    if (!window.confirm("Are you sure? This will delete all your data and cannot be undone.")) {
       return;
     }
+
     setLoading(true);
     setMessage("");
+
     try {
-      const supabase = createClient();
       const { error } = await supabase.rpc("delete_all_data");
-      if (error) throw error;
-      setMessage("All data deleted successfully");
-    } catch (error: any) {
-      setMessage(`Delete failed: ${error.message}`);
+      if (error) {
+        throw error;
+      }
+      setMessage("All data deleted successfully.");
+    } catch (error) {
+      setMessage(`Delete failed: ${getErrorMessage(error)}`);
     } finally {
       setLoading(false);
     }
   }
 
+  const gmailConnected = Boolean(syncSettings?.gmail_connected_at);
+
   return (
     <div className={styles.container}>
       <h1 className={styles.heading}>Settings</h1>
 
-      {/* Pipeline Configuration */}
+      <div className={styles.section}>
+        <h2 className={styles.sectionTitle}>Sync Controls</h2>
+        <p className={styles.description}>
+          Choose the backfill window for first-time syncs, check the latest status, and trigger on-demand runs.
+        </p>
+
+        {syncLoading ? (
+          <p className={styles.description}>Loading sync settings...</p>
+        ) : syncSettings ? (
+          <div className={styles.syncGrid}>
+            <div className={styles.statusCard}>
+              <div>
+                <span className={styles.label}>Current mode</span>
+                <p className={styles.statusValue}>{syncSettings.sync_mode}</p>
+              </div>
+              <div>
+                <span className={styles.label}>Status</span>
+                <p className={styles.statusValue}>{syncSettings.sync_status}</p>
+              </div>
+              <div>
+                <span className={styles.label}>Last synced</span>
+                <p className={styles.statusValue}>{formatDate(syncSettings.last_synced_at)}</p>
+              </div>
+            </div>
+
+            <div className={styles.fieldGrid}>
+              <div className={styles.configRow}>
+                <label className={styles.label} htmlFor="backfill-start">
+                  Backfill start date
+                </label>
+                <input
+                  id="backfill-start"
+                  type="date"
+                  className={styles.input}
+                  value={backfillStartDate}
+                  disabled={loading || !gmailConnected}
+                  onChange={(event) => setBackfillStartDate(event.target.value)}
+                />
+              </div>
+
+              <div className={styles.helperRow}>
+                <span className={styles.helperText}>
+                  Gmail connected: {gmailConnected ? "Yes" : "No"}
+                </span>
+                <span className={styles.helperText}>
+                  Initial start date: {syncSettings.backfill_start_date || "Not set"}
+                </span>
+              </div>
+
+              {syncSettings.sync_error ? (
+                <p className={styles.errorText}>{syncSettings.sync_error}</p>
+              ) : null}
+
+              <div className={styles.actionsRow}>
+                <button
+                  className={styles.button}
+                  onClick={() => void triggerBackfill()}
+                  disabled={loading || !gmailConnected}
+                >
+                  Queue Backfill
+                </button>
+                <button
+                  className={`${styles.button} ${styles.success}`}
+                  onClick={() => void triggerIncremental()}
+                  disabled={loading || !gmailConnected}
+                >
+                  Queue Incremental Sync
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className={styles.description}>Could not load sync settings.</p>
+        )}
+      </div>
+
       <div className={styles.section}>
         <h2 className={styles.sectionTitle}>Pipeline Configuration</h2>
         <p className={styles.description}>
-          Control how often your email pipeline syncs and manage its execution state.
+          Control how often the shared orchestrator checks for new emails and how long run history is retained.
         </p>
 
         {configLoading ? (
           <p className={styles.description}>Loading configuration...</p>
         ) : config ? (
-          <div className={styles.configGrid}>
+          <div className={styles.fieldGrid}>
             <div className={styles.configRow}>
               <label className={styles.label}>Sync Interval (hours)</label>
               <select
                 className={styles.select}
                 value={config.schedule_interval_hours}
                 disabled={loading}
-                onChange={(e) =>
-                  updateConfig({ schedule_interval_hours: parseFloat(e.target.value) })
+                onChange={(event) =>
+                  void updateConfig({ schedule_interval_hours: Number(event.target.value) })
                 }
               >
                 <option value={1}>Every 1 hour</option>
@@ -132,8 +327,8 @@ export default function SettingsPage() {
                 className={styles.select}
                 value={config.retention_days}
                 disabled={loading}
-                onChange={(e) =>
-                  updateConfig({ retention_days: parseInt(e.target.value) })
+                onChange={(event) =>
+                  void updateConfig({ retention_days: Number(event.target.value) })
                 }
               >
                 <option value={7}>7 days</option>
@@ -149,35 +344,27 @@ export default function SettingsPage() {
               <button
                 className={`${styles.button} ${config.is_paused ? styles.success : styles.warning}`}
                 disabled={loading}
-                onClick={() => updateConfig({ is_paused: !config.is_paused })}
+                onClick={() => void updateConfig({ is_paused: !config.is_paused })}
               >
-                {config.is_paused ? "▶ Resume Pipeline" : "⏸ Pause Pipeline"}
+                {config.is_paused ? "Resume Pipeline" : "Pause Pipeline"}
               </button>
             </div>
           </div>
         ) : (
           <p className={styles.description}>
-            Could not load pipeline configuration. Is the orchestrator running?
+            Could not load pipeline configuration. Make sure the orchestrator is running.
           </p>
         )}
       </div>
 
-      {/* GDPR Export */}
       <div className={styles.section}>
         <h2 className={styles.sectionTitle}>GDPR — Right to Access</h2>
-        <p className={styles.description}>
-          Export all your application data as a JSON file.
-        </p>
-        <button
-          className={styles.button}
-          onClick={handleExport}
-          disabled={loading}
-        >
-          {loading ? "Exporting..." : "Export Data (JSON)"}
+        <p className={styles.description}>Export all your application data as a JSON file.</p>
+        <button className={styles.button} onClick={() => void handleExport()} disabled={loading}>
+          Export Data (JSON)
         </button>
       </div>
 
-      {/* GDPR Delete */}
       <div className={styles.section}>
         <h2 className={styles.sectionTitle}>GDPR — Right to Erasure</h2>
         <p className={styles.description}>
@@ -185,18 +372,14 @@ export default function SettingsPage() {
         </p>
         <button
           className={`${styles.button} ${styles.danger}`}
-          onClick={handleDelete}
+          onClick={() => void handleDelete()}
           disabled={loading}
         >
-          {loading ? "Deleting..." : "Delete All My Data"}
+          Delete All My Data
         </button>
       </div>
 
-      {message && (
-        <div className={styles.message}>
-          {message}
-        </div>
-      )}
+      {message ? <div className={styles.message}>{message}</div> : null}
     </div>
   );
 }

@@ -1,3 +1,6 @@
+import path from "node:path";
+
+import dotenv from "dotenv";
 import type { NextConfig } from "next";
 
 // ── Dual-mode env loading ────────────────────────────────────────
@@ -6,8 +9,6 @@ import type { NextConfig } from "next";
 // Vercel/CI: env vars are injected by the platform, dotenv is skipped.
 if (!process.env.VERCEL && !process.env.CI) {
   try {
-    const dotenv = require("dotenv");
-    const path = require("path");
     dotenv.config({ path: path.resolve(__dirname, "../../.env") });
   } catch {
     // dotenv may not be available in production builds — that's fine

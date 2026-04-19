@@ -9,12 +9,14 @@
 import os
 import json
 import base64
+import hashlib
 import re
 import pickle
 from collections.abc import Callable
 from datetime import date, datetime
 from itertools import islice
 from typing import Any, Optional, Dict
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -50,29 +52,41 @@ JOB_KEYWORDS = [
 ]
 
 def _get_cipher():
-    """Get Fernet cipher using ENCRYPTION_KEY from environment."""
+    """Get legacy Fernet cipher for backwards-compatible decryption."""
     key = settings.encryption_key
     if not key:
-        logger.warning("ENCRYPTION_KEY not found in environment. Credentials will be stored in PLAIN TEXT!")
         return None
     try:
         return Fernet(key.encode())
     except Exception as e:
-        logger.error(f"Invalid ENCRYPTION_KEY: {e}")
+        logger.debug(f"Legacy Fernet key unavailable: {e}")
         return None
 
+
+def _get_aes_key() -> bytes | None:
+    secret = settings.encryption_secret or settings.encryption_key
+    if not secret:
+        logger.warning("No encryption secret configured. Credentials will be stored in plain JSON.")
+        return None
+    return hashlib.sha256(secret.encode()).digest()
+
 def _encrypt_data(data: dict) -> str:
-    """Encrypt dictionary to base64 string."""
-    cipher = _get_cipher()
-    if not cipher:
+    """Encrypt dictionary using AES-256-GCM, with JSON fallback if no secret exists."""
+    aes_key = _get_aes_key()
+    if not aes_key:
         return json.dumps(data)
 
     json_data = json.dumps(data).encode()
-    encrypted = cipher.encrypt(json_data)
-    return encrypted.decode()
+    iv = os.urandom(12)
+    encrypted = AESGCM(aes_key).encrypt(iv, json_data, None)
+    return (
+        "aes256gcm:"
+        f"{base64.urlsafe_b64encode(iv).decode()}:"
+        f"{base64.urlsafe_b64encode(encrypted).decode()}"
+    )
 
 def _decrypt_data(encrypted_str: str) -> dict:
-    """Decrypt base64 string to dictionary."""
+    """Decrypt AES-256-GCM or legacy Fernet payloads into a dictionary."""
     if not encrypted_str:
         return {}
 
@@ -83,13 +97,26 @@ def _decrypt_data(encrypted_str: str) -> dict:
         except:
             pass
 
+    if encrypted_str.startswith("aes256gcm:"):
+        try:
+            _prefix, iv_b64, payload_b64 = encrypted_str.split(":", 2)
+            aes_key = _get_aes_key()
+            if not aes_key:
+                return {}
+            iv = base64.urlsafe_b64decode(iv_b64.encode())
+            payload = base64.urlsafe_b64decode(payload_b64.encode())
+            decrypted = AESGCM(aes_key).decrypt(iv, payload, None)
+            return json.loads(decrypted.decode())
+        except Exception as e:
+            logger.error(f"AES decryption failed: {e}")
+            return {}
+
     cipher = _get_cipher()
     if not cipher:
-        # Fallback: maybe it's plain JSON
         try:
             return json.loads(encrypted_str)
         except:
-            logger.error("Data seems encrypted but no cipher available.")
+            logger.error("Data seems encrypted but no compatible cipher is available.")
             return {}
 
     try:
@@ -261,11 +288,12 @@ def save_gmail_credentials_to_db(client, user_id: str, credentials: Credentials)
 # Email Fetching (User-Scoped)
 # ══════════════════════════════════════════════════════════════
 
-def _build_query(after_date: date) -> str:
+def _build_query(after_date: date, only_unread: bool = False) -> str:
     keywords_clause = " OR ".join(JOB_KEYWORDS)
     exclusions = " ".join(f"-from:{s}" for s in QUERY_EXCLUDED_SENDERS)
     after_str = after_date.strftime("%Y/%m/%d")
-    query = f"({keywords_clause}) {exclusions} after:{after_str}"
+    unread_clause = " is:unread" if only_unread else ""
+    query = f"({keywords_clause}) {exclusions} after:{after_str}{unread_clause}"
     logger.info(f"Gmail query built with after:{after_str}")
     return query
 
@@ -340,7 +368,7 @@ def _parse_message(msg: dict) -> EmailMetadata | None:
         return None
 
 
-def fetch_emails_for_user(service, user_id: str, since_date=None, existing_ids=None):
+def fetch_emails_for_user(service, user_id: str, since_date=None, existing_ids=None, only_unread: bool = False):
     """
     Fetch emails for a specific user via Gmail API.
 
@@ -351,12 +379,14 @@ def fetch_emails_for_user(service, user_id: str, since_date=None, existing_ids=N
         since_date = date.today()
 
     logger.info(f"Fetching emails for user {user_id} since {since_date}")
-    query = _build_query(since_date)
+    query = _build_query(since_date, only_unread=only_unread)
 
     all_message_ids: list[str] = []
     page_token = None
+    list_calls = 0
 
     while True:
+        list_calls += 1
         response = (
             service.users()
             .messages()
@@ -376,8 +406,14 @@ def fetch_emails_for_user(service, user_id: str, since_date=None, existing_ids=N
         all_message_ids = [mid for mid in all_message_ids if mid not in existing_ids]
         logger.info(f"{len(all_message_ids)} new emails after filtering existing")
 
+    gmail_api_calls = list_calls + len(all_message_ids)
+    usage = {
+        "gmail_api_calls": gmail_api_calls,
+        "gmail_remaining_quota_estimate": max(settings.gmail_daily_quota_units - gmail_api_calls, 0),
+    }
+
     if not all_message_ids:
-        return []
+        return [], usage
 
     # Batch fetch email details
     emails: list[EmailMetadata] = []
@@ -412,7 +448,7 @@ def fetch_emails_for_user(service, user_id: str, since_date=None, existing_ids=N
         logger.info(f"Batch {batch_num}: fetched {len(batch_results)}/{len(batch_ids)} emails")
 
     logger.info(f"Fetched {len(emails)} emails for user {user_id} ({batch_num} batches)")
-    return emails
+    return emails, usage
 
 
 # ══════════════════════════════════════════════════════════════

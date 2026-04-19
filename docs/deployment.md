@@ -14,11 +14,17 @@ Create a `.env` file in the root directory based on `.env.example`. Required key
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL` (default: `gemini-3.1-flash-lite-preview`)
 
-**Gmail OAuth**
-- `GMAIL_CREDENTIALS_JSON` — Full JSON string from Google Cloud Console
-- `GMAIL_TOKEN_JSON` — Generated after running the OAuth flow
-- `GMAIL_OAUTH_REDIRECT_URI`
-- `ENCRYPTION_KEY` — Fernet key for encrypting stored Gmail tokens
+**Dashboard server routes**
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI`
+- `TELEGRAM_BOT_USERNAME`
+- `TELEGRAM_LINK_SECRET`
+- `ENCRYPTION_SECRET` (preferred) or `ENCRYPTION_KEY` (legacy fallback)
+
+**Gmail OAuth fallback**
+- `GMAIL_CREDENTIALS_JSON` — optional legacy bootstrap JSON
+- `GMAIL_TOKEN_JSON` — optional legacy token JSON for local single-user runs
 
 **Telegram** (optional, per-user settings stored in Supabase take precedence)
 - `TELEGRAM_BOT_TOKEN`
@@ -40,6 +46,11 @@ psql "$DATABASE_URL" -f db/migrations/002_hotfix_rls_policies.sql
 psql "$DATABASE_URL" -f db/migrations/003_views_and_rls.sql
 psql "$DATABASE_URL" -f db/migrations/004_application_stats_view.sql
 psql "$DATABASE_URL" -f db/migrations/005_enable_realtime.sql
+psql "$DATABASE_URL" -f db/migrations/006_fix_status_enum_strings.sql
+psql "$DATABASE_URL" -f db/migrations/007_remove_thread_id_unique.sql
+psql "$DATABASE_URL" -f db/migrations/008_fix_pipeline_runs_constraints.sql
+psql "$DATABASE_URL" -f db/migrations/009_reset_for_reprocessing.sql
+psql "$DATABASE_URL" -f db/migrations/010_sync_integrations_analytics.sql
 ```
 
 Alternatively, paste each file into the Supabase **SQL Editor** and click **Run**.
@@ -89,6 +100,13 @@ The `next.config.ts` automatically loads environment variables from the root `.e
    | `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key |
    | `NEXT_PUBLIC_ORCHESTRATOR_URL` | Your DigitalOcean app URL |
+   | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+   | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+   | `GOOGLE_OAUTH_REDIRECT_URI` | Usually `https://<your-app>/api/integrations/google/callback` |
+   | `SUPABASE_KEY` | Supabase service-role key for the Telegram link completion route |
+   | `ENCRYPTION_SECRET` | Shared secret used to encrypt Gmail credentials before persisting them |
+   | `TELEGRAM_BOT_USERNAME` | Public username of your Telegram bot |
+   | `TELEGRAM_LINK_SECRET` | Shared secret expected by `/api/integrations/telegram/link/complete` |
 4. Click **Deploy**.
 
 > **Note**: The `next.config.ts` is configured with dual-mode env loading — it uses `dotenv` locally but skips it on Vercel/CI where environment variables are injected by the platform.
@@ -106,26 +124,29 @@ The `next.config.ts` automatically loads environment variables from the root `.e
    | Variable | Type |
    |---|---|
    | `SUPABASE_URL` | Secret |
-   | `SUPABASE_KEY` | Secret |
-   | `GEMINI_API_KEY` | Secret |
-   | `ENCRYPTION_KEY` | Secret |
-   | `GEMINI_MODEL` | `gemini-3.1-flash-lite-preview` |
-   | `BATCH_SIZE` | `10` |
-   | `MIN_CONFIDENCE` | `0.55` |
+    | `SUPABASE_KEY` | Secret |
+    | `GEMINI_API_KEY` | Secret |
+    | `ENCRYPTION_SECRET` | Secret |
+    | `ENCRYPTION_KEY` | Secret (legacy fallback) |
+    | `GEMINI_MODEL` | `gemini-3.1-flash-lite-preview` |
+    | `BATCH_SIZE` | `50` |
+    | `MIN_CONFIDENCE` | `0.55` |
+    | `GMAIL_DAILY_QUOTA_UNITS` | `1000000000` |
+    | `GEMINI_INPUT_COST_PER_MILLION` | `0.10` |
+    | `GEMINI_OUTPUT_COST_PER_MILLION` | `0.40` |
 6. Click **Create Resources**.
 
 The app spec is also defined in `.do/app.yaml` for declarative configuration.
 
 ### 2.3 CI/CD Pipeline
 
-Three GitHub Actions workflows automate the full pipeline:
+Three GitHub Actions workflows automate CI and deployment:
 
 | Workflow | File | Trigger | Purpose |
 |---|---|---|---|
 | **CI** | `ci.yml` | Every push & PR | Lint, test, build (reusable) |
 | **Deploy Frontend** | `deploy.yml` | Push to `main` (dashboard changes) | Vercel production deploy |
 | **Deploy Backend** | `deploy-backend.yml` | Push to `main` (backend changes) | DigitalOcean container deploy |
-| **Pipeline Trigger** | `pipeline-trigger.yml` | Cron (every 4h) + manual | Insert sync task into Supabase |
 
 #### Required GitHub Secrets
 
@@ -139,9 +160,6 @@ Three GitHub Actions workflows automate the full pipeline:
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project settings | CI build env var |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project settings | CI build env var |
 | `NEXT_PUBLIC_ORCHESTRATOR_URL` | DigitalOcean app URL | CI build env var |
-| `SUPABASE_URL` | Supabase project settings | Pipeline trigger workflow |
-| `SUPABASE_KEY` | Supabase service role key | Pipeline trigger workflow |
-| `PIPELINE_USER_ID` | Your user UUID in Supabase | Pipeline trigger workflow |
 
 #### Deploy Flow
 
@@ -168,5 +186,5 @@ git push to main
    - Expect: `{"status": "ok", "worker": "active", "scheduler": true}`
 2. **Frontend**: Visit your Vercel URL → Login → Navigate to Pipeline page.
 3. **Manual sync**: Click **Manual Sync** on the Pipeline page → Watch stage progress bars animate.
-4. **Cron verification**: Check GitHub Actions → `Scheduled Pipeline Sync` runs every 4 hours.
-5. **Telegram**: If enabled, verify you receive a consolidated run summary after the pipeline completes.
+4. **Scheduler verification**: Confirm the backend reports `"scheduler": true` on `/health`, then wait for the configured interval or trigger a manual run from the dashboard.
+5. **Telegram**: Generate a link code in the Profile page, complete the bot handshake, and verify you receive a consolidated run summary after the pipeline completes.

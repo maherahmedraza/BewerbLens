@@ -30,8 +30,11 @@ async def trigger_run(payload: TriggerRequest):
     Manually triggers a pipeline execution.
     Returns the run identifiers immediately while execution continues in background.
     """
-    if payload.triggered_by not in ["manual", "backfill"]:
-        raise HTTPException(status_code=400, detail="Invalid triggered_by. Must be 'manual' or 'backfill'.")
+    if payload.triggered_by not in ["manual", "backfill", "incremental"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid triggered_by. Must be 'manual', 'backfill', or 'incremental'.",
+        )
     
     try:
         run = await tracker_service.start_run(

@@ -2,15 +2,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import api from '@/lib/api';
-import type { PipelineRun, PipelineStep } from '@/lib/types';
+import type { PipelineConfig, PipelineRun, PipelineStep } from '@/lib/types';
 
 const supabase = createClient();
-
-type PipelineConfig = {
-  retention_days?: number;
-  schedule_interval_hours?: number;
-  is_paused?: boolean;
-};
 
 /**
  * Hook to fetch the global pipeline configuration.

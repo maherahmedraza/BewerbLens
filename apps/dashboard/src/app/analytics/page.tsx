@@ -3,6 +3,7 @@ import PlatformPie from "@/components/charts/PlatformPie";
 import StatusFunnel from "@/components/charts/StatusFunnel";
 import { createClient } from "@/lib/supabase/server";
 import type { MonthlyApplication, PlatformBreakdown, ConversionFunnel, TopCompany, LocationBreakdown } from "@/lib/types";
+import UsageAnalyticsClient from "./UsageAnalyticsClient";
 import styles from "./page.module.css";
 
 async function getMonthlyData(): Promise<MonthlyApplication[]> {
@@ -127,6 +128,16 @@ export default async function AnalyticsPage() {
           </div>
         </div>
       </div>
+
+      <section className={styles.usageSection}>
+        <div className={styles.usageHeader}>
+          <h2 className="sectionTitle">Operational Analytics</h2>
+          <p className="subheading">
+            Gmail usage, AI workload, notification delivery, and sync health for the last 30 days.
+          </p>
+        </div>
+        <UsageAnalyticsClient />
+      </section>
     </div>
   );
 }
