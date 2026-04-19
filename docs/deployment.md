@@ -51,6 +51,7 @@ psql "$DATABASE_URL" -f db/migrations/007_remove_thread_id_unique.sql
 psql "$DATABASE_URL" -f db/migrations/008_fix_pipeline_runs_constraints.sql
 psql "$DATABASE_URL" -f db/migrations/009_reset_for_reprocessing.sql
 psql "$DATABASE_URL" -f db/migrations/010_sync_integrations_analytics.sql
+psql "$DATABASE_URL" -f db/migrations/011_fix_admin_role_policy_function.sql
 ```
 
 Alternatively, paste each file into the Supabase **SQL Editor** and click **Run**.

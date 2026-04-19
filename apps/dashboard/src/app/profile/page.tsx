@@ -6,6 +6,7 @@ import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 
 import { createClient } from "@/lib/supabase/client";
 import type { SyncMode, SyncStatus } from "@/lib/types";
+import { getOrCreateCompatibleUserProfile } from "@/lib/userProfiles";
 
 import styles from "./profile.module.css";
 
@@ -29,7 +30,10 @@ interface ProfileState {
   full_name: string | null;
   region: Region;
   role: "user" | "admin";
+  supportsSyncSchema: boolean;
+  gmail_connected: boolean;
   gmail_connected_at: string | null;
+  telegram_connected: boolean;
   telegram_connected_at: string | null;
   telegram_enabled: boolean;
   sync_mode: SyncMode;
@@ -44,9 +48,6 @@ interface TelegramLinkState {
   botUsername: string | null;
   botUrl: string | null;
 }
-
-const PROFILE_SELECT =
-  "id, email, full_name, region, role, gmail_connected_at, telegram_connected_at, telegram_enabled, sync_mode, sync_status, backfill_start_date, last_synced_at";
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
@@ -79,47 +80,12 @@ export default function ProfileSettingsPage() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("user_profiles")
-      .select(PROFILE_SELECT)
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (!data) {
-      const { error: upsertError } = await supabase
-        .from("user_profiles")
-        .upsert({ id: user.id, email: user.email || "" });
-
-      if (upsertError) {
-        throw upsertError;
-      }
-
-      const { error: initializeError } = await supabase.rpc("initialize_user", {
-        p_user_id: user.id,
-        p_region: "en",
-      });
-      if (initializeError) {
-        throw initializeError;
-      }
-
-      const { data: reloadedProfile, error: reloadError } = await supabase
-        .from("user_profiles")
-        .select(PROFILE_SELECT)
-        .eq("id", user.id)
-        .single();
-
-      if (reloadError) {
-        throw reloadError;
-      }
-      setProfile(reloadedProfile as ProfileState);
-      return;
-    }
-
-    if (error) {
-      throw error;
-    }
-
-    setProfile(data as ProfileState);
+    const compatibleProfile = await getOrCreateCompatibleUserProfile(
+      supabase,
+      user.id,
+      user.email || ""
+    );
+    setProfile(compatibleProfile);
   }, [supabase]);
 
   const loadFilters = useCallback(async () => {
@@ -338,8 +304,8 @@ export default function ProfileSettingsPage() {
     );
   }
 
-  const gmailConnected = Boolean(profile.gmail_connected_at);
-  const telegramConnected = Boolean(profile.telegram_connected_at);
+  const gmailConnected = profile.gmail_connected;
+  const telegramConnected = profile.telegram_connected;
 
   return (
     <div className={styles.profileContainer}>
@@ -347,6 +313,16 @@ export default function ProfileSettingsPage() {
 
       {message || integrationMessage ? (
         <div className={styles.message}>{message || integrationMessage}</div>
+      ) : null}
+
+      {!profile.supportsSyncSchema ? (
+        <div className={styles.noticeCard}>
+          <p className={styles.helpText}>
+            This project is still using the pre-sync schema for <code>user_profiles</code>. The
+            basic profile works, but sync status, connection timestamps, Telegram linking, and the
+            new analytics surface need migration <code>010_sync_integrations_analytics.sql</code>.
+          </p>
+        </div>
       ) : null}
 
       <section className={styles.section}>
@@ -396,11 +372,24 @@ export default function ProfileSettingsPage() {
             </span>
           </div>
           <p>Authorize Gmail once. BewerbLens stores the refresh token server-side and keeps sync controls in Settings.</p>
-          <p className={styles.helpText}>
-            Connected: {formatDate(profile.gmail_connected_at)} · Sync mode: {profile.sync_mode} · Status: {profile.sync_status}
-          </p>
+          {profile.supportsSyncSchema ? (
+            <p className={styles.helpText}>
+              Connected: {formatDate(profile.gmail_connected_at)} · Sync mode: {profile.sync_mode} ·
+              {" "}Status: {profile.sync_status}
+            </p>
+          ) : (
+            <p className={styles.helpText}>
+              {gmailConnected
+                ? "Gmail credentials exist, but connection timestamps and sync state require migration 010."
+                : "Gmail is not connected yet."}
+            </p>
+          )}
           <div className={styles.inlineActions}>
-            <button onClick={connectGmail} className={styles.btnPrimary}>
+            <button
+              onClick={connectGmail}
+              className={styles.btnPrimary}
+              disabled={!profile.supportsSyncSchema}
+            >
               {gmailConnected ? "Reconnect Gmail" : "Connect Gmail"}
             </button>
             <Link href="/settings" className={styles.btnSecondary}>
@@ -417,7 +406,13 @@ export default function ProfileSettingsPage() {
             </span>
           </div>
           <p>Link your Telegram chat with a one-time code instead of pasting bot tokens or chat IDs into the browser.</p>
-          <p className={styles.helpText}>Connected: {formatDate(profile.telegram_connected_at)}</p>
+          <p className={styles.helpText}>
+            {profile.supportsSyncSchema
+              ? `Connected: ${formatDate(profile.telegram_connected_at)}`
+              : telegramConnected
+                ? "Telegram is configured on the legacy schema."
+                : "Telegram is not connected yet."}
+          </p>
 
           <label className={styles.checkboxLabel}>
             <input
@@ -430,14 +425,14 @@ export default function ProfileSettingsPage() {
           </label>
 
           <div className={styles.inlineActions}>
-            <button
-              onClick={() => void startTelegramLink()}
-              className={styles.btnPrimary}
-              disabled={linkingTelegram}
-            >
-              {telegramConnected ? "Relink Telegram" : "Link Telegram"}
-            </button>
-          </div>
+              <button
+                onClick={() => void startTelegramLink()}
+                className={styles.btnPrimary}
+                disabled={linkingTelegram || !profile.supportsSyncSchema}
+              >
+                {telegramConnected ? "Relink Telegram" : "Link Telegram"}
+              </button>
+            </div>
 
           {telegramLink ? (
             <div className={styles.noticeCard}>

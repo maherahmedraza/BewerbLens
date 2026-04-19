@@ -59,16 +59,21 @@ CREATE TABLE IF NOT EXISTS telegram_link_requests (
 
 ALTER TABLE telegram_link_requests ENABLE ROW LEVEL SECURITY;
 
+-- Fix Infinite Recursion: Create a SECURITY DEFINER function to bypass RLS when checking roles
+CREATE OR REPLACE FUNCTION public.get_user_role()
+RETURNS TEXT
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT role FROM user_profiles WHERE id = auth.uid();
+$$;
+
 DROP POLICY IF EXISTS "Admins can view all profiles" ON user_profiles;
 CREATE POLICY "Admins can view all profiles"
     ON user_profiles FOR SELECT
     USING (
-        EXISTS (
-            SELECT 1
-            FROM user_profiles viewer
-            WHERE viewer.id = auth.uid()
-              AND viewer.role = 'admin'
-        )
+        public.get_user_role() = 'admin'
     );
 
 DROP POLICY IF EXISTS "Users can view own telegram link requests" ON telegram_link_requests;
@@ -121,12 +126,7 @@ DROP POLICY IF EXISTS "Admins can view all usage metrics" ON usage_metrics;
 CREATE POLICY "Admins can view all usage metrics"
     ON usage_metrics FOR SELECT
     USING (
-        EXISTS (
-            SELECT 1
-            FROM user_profiles viewer
-            WHERE viewer.id = auth.uid()
-              AND viewer.role = 'admin'
-        )
+        public.get_user_role() = 'admin'
     );
 
 DROP POLICY IF EXISTS "Users can insert own usage metrics" ON usage_metrics;

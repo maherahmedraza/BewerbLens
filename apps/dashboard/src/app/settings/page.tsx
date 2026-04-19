@@ -5,11 +5,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import type { PipelineConfig, SyncMode, SyncStatus } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
+import { getOrCreateCompatibleUserProfile } from "@/lib/userProfiles";
 
 import styles from "./page.module.css";
 
 interface SyncSettings {
   id: string;
+  supportsSyncSchema: boolean;
+  gmail_connected: boolean;
   gmail_connected_at: string | null;
   backfill_start_date: string | null;
   last_synced_at: string | null;
@@ -17,9 +20,6 @@ interface SyncSettings {
   sync_status: SyncStatus;
   sync_error: string | null;
 }
-
-const PROFILE_SELECT =
-  "id, gmail_connected_at, backfill_start_date, last_synced_at, sync_mode, sync_status, sync_error";
 
 function getErrorMessage(error: unknown) {
   if (error && typeof error === "object" && "response" in error) {
@@ -71,17 +71,7 @@ export default function SettingsPage() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("user_profiles")
-        .select(PROFILE_SELECT)
-        .eq("id", user.id)
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      const profile = data as SyncSettings;
+      const profile = await getOrCreateCompatibleUserProfile(supabase, user.id, user.email || "");
       setSyncSettings(profile);
       setBackfillStartDate(profile.backfill_start_date || new Date().toISOString().slice(0, 10));
     } catch (error) {
@@ -210,7 +200,7 @@ export default function SettingsPage() {
     }
   }
 
-  const gmailConnected = Boolean(syncSettings?.gmail_connected_at);
+  const gmailConnected = Boolean(syncSettings?.gmail_connected);
 
   return (
     <div className={styles.container}>
@@ -226,6 +216,14 @@ export default function SettingsPage() {
           <p className={styles.description}>Loading sync settings...</p>
         ) : syncSettings ? (
           <div className={styles.syncGrid}>
+            {!syncSettings.supportsSyncSchema ? (
+              <p className={styles.errorText}>
+                Migration <code>010_sync_integrations_analytics.sql</code> has not been applied yet.
+                Basic profile data still works, but sync status and on-demand sync controls stay
+                disabled until that migration is in the database.
+              </p>
+            ) : null}
+
             <div className={styles.statusCard}>
               <div>
                 <span className={styles.label}>Current mode</span>
@@ -273,14 +271,14 @@ export default function SettingsPage() {
                 <button
                   className={styles.button}
                   onClick={() => void triggerBackfill()}
-                  disabled={loading || !gmailConnected}
+                  disabled={loading || !gmailConnected || !syncSettings.supportsSyncSchema}
                 >
                   Queue Backfill
                 </button>
                 <button
                   className={`${styles.button} ${styles.success}`}
                   onClick={() => void triggerIncremental()}
-                  disabled={loading || !gmailConnected}
+                  disabled={loading || !gmailConnected || !syncSettings.supportsSyncSchema}
                 >
                   Queue Incremental Sync
                 </button>
