@@ -42,8 +42,11 @@ JOB_KEYWORDS = [
     "bewerbung", "application", "absage", "rejection",
     "einladung", "interview", "eingangsbestätigung",
     "eingangsbestaetigung", "angebot", "offer",
+    "karriere", "career", "recruitment", "hiring",
+    "status", "update", "assessment", "talent",
     '"thank you for applying"', '"we received"',
     '"ihre bewerbung"', '"deine bewerbung"',
+    '"next steps"', '"nächste schritte"',
 ]
 
 def _get_cipher():

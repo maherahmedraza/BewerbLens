@@ -214,10 +214,19 @@ def create_default_filters_for_user(client, user_id: str, region: str = 'en'):
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'applied', 'priority': 1},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'confirmation', 'priority': 1},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'thank you for applying', 'priority': 1},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'we received', 'priority': 1},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'interview', 'priority': 2},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'offer', 'priority': 2},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'rejection', 'priority': 3},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'unfortunately', 'priority': 3},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'update', 'priority': 4},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'status', 'priority': 4},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'career', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'hiring', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'recruitment', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'talent', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'assessment', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'next steps', 'priority': 5},
             
             # EXCLUDE patterns
             {'filter_type': 'exclude', 'field': 'sender', 'pattern': 'noreply@linkedin.com', 'priority': 10},
@@ -238,6 +247,12 @@ def create_default_filters_for_user(client, user_id: str, region: str = 'en'):
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'absage', 'priority': 3},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'leider', 'priority': 3},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'rückmeldung', 'priority': 3},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'update', 'priority': 4},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'status', 'priority': 4},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'karriere', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'einstellung', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'talent', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'nächste schritte', 'priority': 5},
             
             # EXCLUDE patterns
             {'filter_type': 'exclude', 'field': 'sender', 'pattern': 'noreply@linkedin.com', 'priority': 10},

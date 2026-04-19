@@ -211,7 +211,7 @@ def _run_ingestion_stage(
     fetched_count = len(new_emails)
     log_to_db(client, internal_id, "INFO", f"Fetched {fetched_count} new emails", PipelineStage.INGESTION.value)
 
-    pending_emails = get_unprocessed_emails_for_user(client, user_id, limit=50)
+    pending_emails = get_unprocessed_emails_for_user(client, user_id, limit=1000)
     recovered_count = 0
     if pending_emails:
         new_ids = {email.email_id for email in new_emails}
