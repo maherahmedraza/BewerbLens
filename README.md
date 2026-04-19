@@ -2,6 +2,10 @@
 
 > **BewerbLens** — Your intelligent lens on the job application process. An end-to-end, AI-powered job application tracker that automatically ingests, classifies, and monitors your job application emails — then surfaces everything on a beautiful real-time dashboard.
 
+[![CI](https://github.com/maherahmedraza/BewerbLens/actions/workflows/ci.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/ci.yml)
+[![Deploy Frontend](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy.yml)
+[![Deploy Backend](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-backend.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-backend.yml)
+
 ---
 
 ## Overview
@@ -20,46 +24,67 @@ BewerbLens solves a universal problem for job seekers: **tracking applications s
 ## Architecture
 
 ```mermaid
-graph TD
-    subgraph "External Services"
-        Gmail[Gmail API]
-        Gemini[Gemini AI]
-        Telegram[Telegram Bot]
+graph TB
+    subgraph "GitHub"
+        GH[Repository]
+        CI[CI Pipeline<br/>lint + build + test]
+        DF[Deploy Frontend]
+        DB_DEPLOY[Deploy Backend]
+        CRON[Pipeline Trigger<br/>Every 4h]
     end
 
-    subgraph "BewerbLens Backend"
-        Orchestrator[Orchestrator Service <br/> FastAPI]
-        Worker[Background Worker]
-        Tracker[AI Tracker Pipeline <br/> Python]
-        DB[(Supabase / Postgres)]
+    subgraph "Vercel — Free Tier"
+        DASH[Next.js Dashboard<br/>Global Edge CDN<br/>SSR + Static]
     end
 
-    subgraph "BewerbLens Frontend"
-        Dashboard[Next.js Dashboard]
+    subgraph "DigitalOcean App Platform"
+        ORCH[FastAPI Orchestrator<br/>Web Service :8000]
+        WORKER[Background Worker Thread]
+        SCHED[APScheduler<br/>Periodic Sync]
     end
 
-    Gmail --> Tracker
-    Tracker --> Gemini
-    Tracker --> DB
-    Tracker --> Telegram
-    
-    Orchestrator --> Worker
-    Worker --> Tracker
-    Orchestrator --> DB
-    
-    Dashboard --> Orchestrator
-    Dashboard --> DB
+    subgraph "Supabase — Free Tier"
+        SUPDB[(PostgreSQL + RLS)]
+        AUTH[Auth]
+        RT[Realtime]
+    end
+
+    subgraph "External APIs"
+        GMAIL[Gmail API]
+        GEMINI[Gemini 3.1 Flash-Lite]
+        TG[Telegram Bot]
+    end
+
+    GH -->|push to main| CI
+    CI -->|on success| DF
+    CI -->|on success| DB_DEPLOY
+    DF --> DASH
+    DB_DEPLOY --> ORCH
+    CRON -->|insert task| SUPDB
+
+    DASH -->|API calls| ORCH
+    DASH -->|auth + data| SUPDB
+    DASH -->|live updates| RT
+
+    ORCH --> WORKER
+    SCHED --> WORKER
+    WORKER --> GMAIL
+    WORKER --> GEMINI
+    WORKER --> SUPDB
+    WORKER --> TG
 ```
 
-### Components
+### Tech Stack
 
-| Component | Tech Stack | Purpose |
+| Component | Tech | Purpose |
 |---|---|---|
-| **Orchestrator** | FastAPI, APScheduler | REST API, job scheduling, and worker management |
-| **Worker** | Python Threading | Background task execution (claims tasks via `claim_next_task` RPC) |
-| **AI Tracker** | Python 3.11+, Gemini 3.1 Flash-Lite | Three-stage email ingestion, classification & persistence pipeline |
-| **Dashboard** | Next.js 16, React 19, Recharts, TanStack Query | Real-time tracking UI with Supabase Realtime subscriptions |
-| **Database** | Supabase (PostgreSQL) | Persistent storage, task queue, step tracking, RLS data isolation |
+| **Frontend** | Next.js 16, React 19, Recharts, TanStack Query | Real-time dashboard with Supabase Realtime |
+| **Backend** | FastAPI, APScheduler, Python 3.12 | REST API, job scheduling, and worker management |
+| **AI Pipeline** | Gemini 3.1 Flash-Lite, Pydantic | Three-stage email classification pipeline |
+| **Database** | Supabase (PostgreSQL) | Storage, task queue, auth, realtime, RLS |
+| **Frontend Hosting** | Vercel (Free Hobby Tier) | Global Edge CDN, SSR |
+| **Backend Hosting** | DigitalOcean App Platform ($5/mo) | Always-on Docker container |
+| **CI/CD** | GitHub Actions | Automated lint → test → deploy pipeline |
 
 ---
 
@@ -80,6 +105,7 @@ graph TD
 - **Fuzzy Matching** — Resolves company/job title naming inconsistencies across email threads and job portals.
 - **Status Priority** — Terminal states (Offer, Rejected) are never overwritten by later lower-priority emails.
 - **Zombie Detection** — Scheduler runs `HeartbeatMonitor` every 5 minutes to detect and kill stale runs.
+- **Consolidated Telegram Reports** — End-of-run summary report instead of per-job spam notifications.
 - **Retry & Graceful Degradation** — Exponential-backoff retries; partial successes are saved rather than discarded.
 
 ### Premium Dashboard
@@ -93,38 +119,42 @@ graph TD
 
 ```
 BewerbLens/
-├── apps/                          # Core Applications
-│   ├── orchestrator/              # FastAPI Task Manager
-│   │   ├── main.py                # Entry point (lifespan, CORS, routers)
-│   │   ├── routers/               # REST Endpoints (runs, config)
-│   │   └── services/              # Worker, Scheduler, TrackerService, Config
+├── .do/                              # DigitalOcean App Spec
+│   └── app.yaml                      # Backend service definition
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                    # Lint, test, build (reusable)
+│       ├── deploy.yml                # Frontend → Vercel
+│       ├── deploy-backend.yml        # Backend → DigitalOcean
+│       └── pipeline-trigger.yml      # Cron: 4-hour pipeline sync
+├── apps/
+│   ├── orchestrator/                 # FastAPI Task Manager
+│   │   ├── main.py                   # Entry point (lifespan, CORS, routers)
+│   │   ├── routers/                  # REST Endpoints (runs, config)
+│   │   └── services/                 # Worker, Scheduler, TrackerService, Config
 │   │
-│   ├── tracker/                   # AI Processing Pipeline
-│   │   ├── tracker.py             # run_pipeline_multiuser() entry point
-│   │   ├── classifier_factory.py  # Pluggable classifier (Gemini / future)
-│   │   ├── classifier_base.py     # Abstract classifier interface
-│   │   ├── gemini_classifier.py   # Gemini 3.1 Flash-Lite implementation
-│   │   ├── fuzzy_matcher.py       # Company/job title deduplication
-│   │   ├── failure_handler.py     # Retry, zombie detection, StepExecutor
-│   │   ├── pipeline_logger.py     # Buffered DB log sink
-│   │   ├── pre_filter.py          # Per-user rule-based email filtering
-│   │   └── supabase_service.py    # DB operations (pipeline steps, heartbeat)
+│   ├── tracker/                      # AI Processing Pipeline
+│   │   ├── tracker.py                # run_pipeline_multiuser() entry point
+│   │   ├── classifier_factory.py     # Pluggable classifier (Gemini / future)
+│   │   ├── gemini_classifier.py      # Gemini 3.1 Flash-Lite implementation
+│   │   ├── fuzzy_matcher.py          # Company/job title deduplication
+│   │   ├── failure_handler.py        # Retry, zombie detection, StepExecutor
+│   │   ├── pipeline_logger.py        # Buffered DB log sink
+│   │   ├── pre_filter.py             # Per-user rule-based email filtering
+│   │   ├── telegram_notifier.py      # Consolidated run reports via Telegram
+│   │   └── supabase_service.py       # DB operations (pipeline steps, heartbeat)
 │   │
-│   └── dashboard/                 # Next.js 16 Frontend
-│       ├── src/app/               # App Router pages (pipeline, analytics, …)
+│   └── dashboard/                    # Next.js 16 Frontend
+│       ├── src/app/                  # App Router pages (pipeline, analytics, …)
 │       ├── src/hooks/usePipeline.ts  # TanStack Query + Realtime hooks
-│       └── src/components/        # UI Components (charts, tables, logs)
+│       └── src/components/           # UI Components (charts, tables, logs)
 │
 ├── db/
-│   └── migrations/                # Idempotent SQL migrations (run in order)
-│
-├── docs/                          # Detailed Documentation
-│   ├── architecture.md            # System deep-dive
-│   ├── api.md                     # Orchestrator API spec
-│   ├── deployment.md              # Setup & Hosting guides
-│   └── troubleshooting.md         # Common issues & fixes
-│
-└── README.md                      # This file
+│   └── migrations/                   # Idempotent SQL migrations (run in order)
+├── docs/                             # Detailed Documentation
+├── Dockerfile                        # Backend container image
+├── requirements.txt                  # Python dependencies
+└── README.md                         # This file
 ```
 
 ---
@@ -132,7 +162,7 @@ BewerbLens/
 ## Quick Start
 
 ### 1. Prerequisites
-- Python 3.11+ & Node.js 18+
+- Python 3.12+ & Node.js 22+
 - Supabase Project & Google Cloud Project (Gmail API + Gemini Key)
 
 ### 2. Environment Setup
@@ -153,9 +183,8 @@ psql "$DATABASE_URL" -f db/migrations/005_enable_realtime.sql
 
 ### 4. Start Backend Services
 ```bash
-cd apps/orchestrator
-pip install -e ../tracker   # install tracker as a package
-python main.py              # FastAPI on port 8000
+pip install -r requirements.txt
+cd apps/orchestrator && python main.py  # FastAPI on port 8000
 ```
 
 ### 5. Start Dashboard
@@ -168,12 +197,40 @@ Visit `http://localhost:3000` to access the dashboard.
 
 ---
 
+## Production Deployment
+
+BewerbLens uses a hybrid cloud architecture for cost-effective production hosting:
+
+| Layer | Platform | Cost |
+|---|---|---|
+| Frontend | [Vercel](https://vercel.com) (Free Hobby Tier) | $0/mo |
+| Backend | [DigitalOcean App Platform](https://cloud.digitalocean.com) | $5/mo (covered by student credit) |
+| Database | [Supabase](https://supabase.com) (Free Tier) | $0/mo |
+| CI/CD | GitHub Actions | $0/mo |
+
+### CI/CD Pipeline
+
+```
+git push → CI (lint + build + test + security scan)
+                ├── Frontend: Vercel production deploy
+                └── Backend: DigitalOcean container deploy
+```
+
+All workflows use **path filtering** — frontend deploys only trigger when `apps/dashboard/**` changes, backend deploys only trigger when `apps/tracker/**` or `apps/orchestrator/**` changes.
+
+See [docs/deployment.md](docs/deployment.md) for full setup instructions.
+
+---
+
 ## Documentation
 
-For more detailed information, please refer to the files in the `docs/` folder:
-- [Architecture & Workflow](docs/architecture.md)
-- [API Documentation](docs/api.md)
-- [Deployment Guide](docs/deployment.md)
+| Document | Description |
+|---|---|
+| [Architecture & Workflow](docs/architecture.md) | System deep-dive, data flow, multi-user model |
+| [API Documentation](docs/api.md) | Orchestrator REST API spec |
+| [Deployment Guide](docs/deployment.md) | Local, Vercel, DigitalOcean, and CI/CD setup |
+| [Troubleshooting](docs/troubleshooting.md) | Common issues & fixes |
+| [Contributing](CONTRIBUTING.md) | Development guidelines and PR workflow |
 
 ---
 

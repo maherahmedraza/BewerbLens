@@ -2,6 +2,17 @@
 
 BewerbLens is built as a modular system consisting of three main applications working together with Supabase as the central data and coordination hub.
 
+## Production Hosting
+
+| Layer | Platform | Details |
+|---|---|---|
+| **Frontend** | Vercel (Free) | Next.js SSR + Global Edge CDN, auto-deploy from `main` |
+| **Backend** | DigitalOcean App Platform ($5/mo) | Docker container running FastAPI + Worker |
+| **Database** | Supabase (Free) | PostgreSQL + Auth + RLS + Realtime |
+| **CI/CD** | GitHub Actions | Lint → Test → Build → Deploy (path-filtered) |
+
+The backend runs from a `Dockerfile` at the project root, which copies `apps/tracker` and `apps/orchestrator` into a Python 3.12 slim image and sets `PYTHONPATH` for cross-module imports.
+
 ## High-Level Components
 
 ### 1. Orchestrator Service (`apps/orchestrator`)
@@ -18,7 +29,7 @@ The core processing engine written in Python 3.11+.
 - **Classification**: A `ClassifierFactory` selects the active classifier implementation based on the `CLASSIFIER_PROVIDER` setting (default: `gemini`). The `GeminiClassifier` defaults to Gemini 3.1 Flash-Lite and uses Structured Outputs / JSON Schema plus `tenacity` retries.
 - **Fuzzy Matching**: `ApplicationMatcher` (`fuzzy_matcher.py`) resolves naming inconsistencies between job portals and email senders using composite similarity scoring.
 - **Persistence**: `upsert_application_fixed` applies Status Priority Logic (terminal states like Offer or Rejected are never downgraded).
-- **Notifications**: Sends Telegram alerts using the user's own bot token and chat ID.
+- **Notifications**: Sends a **consolidated end-of-run Telegram report** (added/updated/skipped/error counts, company names, duration) instead of per-job spam messages.
 - **Failure Resilience** (`failure_handler.py`):
   - `@with_retry` decorator — exponential backoff (configurable max attempts, initial delay, max delay).
   - `HeartbeatMonitor` — detects zombie runs (no heartbeat for > 10 minutes) and marks them `failed`.

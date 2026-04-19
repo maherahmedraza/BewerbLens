@@ -1,6 +1,8 @@
 # Deployment Guide
 
-BewerbLens can be deployed locally for development or hosted in the cloud for continuous tracking.
+BewerbLens uses a **hybrid cloud architecture**: Vercel for the frontend, DigitalOcean App Platform for the backend, and Supabase for the database.
+
+---
 
 ## 1. Local Development
 
@@ -12,14 +14,11 @@ Create a `.env` file in the root directory based on `.env.example`. Required key
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL` (default: `gemini-3.1-flash-lite-preview`)
 
-**Gmail OAuth** (Base64-encoded JSON files)
-- `GMAIL_CREDENTIALS_JSON`
-- `GMAIL_TOKEN_JSON`
+**Gmail OAuth**
+- `GMAIL_CREDENTIALS_JSON` — Full JSON string from Google Cloud Console
+- `GMAIL_TOKEN_JSON` — Generated after running the OAuth flow
 - `GMAIL_OAUTH_REDIRECT_URI`
-- `ENCRYPTION_KEY`
-
-**Classifier** (optional, defaults to `gemini`)
-- `CLASSIFIER_PROVIDER=gemini`
+- `ENCRYPTION_KEY` — Fernet key for encrypting stored Gmail tokens
 
 **Telegram** (optional, per-user settings stored in Supabase take precedence)
 - `TELEGRAM_BOT_TOKEN`
@@ -50,55 +49,124 @@ After applying migrations, ensure the `claim_next_task` RPC function is present 
 ---
 
 ### Backend (Orchestrator & Tracker)
-1. Install tracker as a local package:
-   ```bash
-   pip install -e ./apps/tracker
-   ```
-2. Run the Orchestrator:
-   ```bash
-   cd apps/orchestrator
-   python main.py
-   ```
-   The API will be available at `http://localhost:8000`. The worker thread and scheduler start automatically.
+```bash
+pip install -r requirements.txt     # Install all Python dependencies
+cd apps/orchestrator
+python main.py                      # FastAPI on port 8000
+```
+The API will be available at `http://localhost:8000`. The worker thread and scheduler start automatically.
 
 ### Frontend (Dashboard)
-1. Install dependencies:
-   ```bash
-   cd apps/dashboard
-   npm install
-   ```
-2. Start the development server:
-   ```bash
-   npm run dev
-   ```
+```bash
+cd apps/dashboard
+npm install && npm run dev          # Next.js on port 3000
+```
+
+The `next.config.ts` automatically loads environment variables from the root `.env` during local development.
 
 ---
 
 ## 2. Production Deployment
 
-### Backend (Docker)
-Use the provided `docker-compose.yml` to run the services in the background:
-```bash
-docker compose up -d
+### Architecture Overview
+
+```
+┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
+│   Vercel (Free)  │────▶│ DigitalOcean ($5/mo)  │────▶│ Supabase (Free) │
+│   Next.js SSR    │     │  Docker Container     │     │   PostgreSQL    │
+│   Global CDN     │     │  FastAPI + Worker      │     │   Auth + RLS    │
+└─────────────────┘     └──────────────────────┘     │   Realtime      │
+                                                      └─────────────────┘
 ```
 
-### Frontend (Vercel)
-The dashboard is optimised for Vercel:
-1. Connect your GitHub repository to Vercel.
-2. Set the root directory to `apps/dashboard`.
-3. Add all required environment variables in the Vercel Dashboard, including `NEXT_PUBLIC_ORCHESTRATOR_URL` pointing to your hosted Orchestrator.
-4. Deploy.
+### 2.1 Frontend → Vercel
 
-### GitHub Actions (Serverless Tracker)
-If you prefer not to host a 24/7 server, run the tracker via GitHub Actions (cron job):
-- See `.github/workflows/tracker.yml` for configuration.
-- Note: This bypasses the Orchestrator and runs the sync script directly. The Pipeline page in the dashboard will not reflect these runs unless you write results to Supabase manually.
+1. Go to [vercel.com/new](https://vercel.com/new) and import `maherahmedraza/BewerbLens`.
+2. Set **Root Directory** to `apps/dashboard`.
+3. Add environment variables in the Vercel dashboard:
+   | Variable | Value |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key |
+   | `NEXT_PUBLIC_ORCHESTRATOR_URL` | Your DigitalOcean app URL |
+4. Click **Deploy**.
+
+> **Note**: The `next.config.ts` is configured with dual-mode env loading — it uses `dotenv` locally but skips it on Vercel/CI where environment variables are injected by the platform.
+
+### 2.2 Backend → DigitalOcean App Platform
+
+1. Go to [cloud.digitalocean.com/apps/new](https://cloud.digitalocean.com/apps/new).
+2. Select **GitHub** → Choose `BewerbLens` → Branch: `main`.
+3. DigitalOcean will auto-detect the `Dockerfile` at the root.
+4. Configure the component:
+   - **Name**: `orchestrator`
+   - **Resource Size**: Basic ($5/mo) — 1 vCPU, 0.5 GB RAM
+   - **Region**: Frankfurt (FRA) for Europe
+5. Add environment variables (mark secrets as encrypted):
+   | Variable | Type |
+   |---|---|
+   | `SUPABASE_URL` | Secret |
+   | `SUPABASE_KEY` | Secret |
+   | `GEMINI_API_KEY` | Secret |
+   | `ENCRYPTION_KEY` | Secret |
+   | `GEMINI_MODEL` | `gemini-3.1-flash-lite-preview` |
+   | `BATCH_SIZE` | `10` |
+   | `MIN_CONFIDENCE` | `0.55` |
+6. Click **Create Resources**.
+
+The app spec is also defined in `.do/app.yaml` for declarative configuration.
+
+### 2.3 CI/CD Pipeline
+
+Three GitHub Actions workflows automate the full pipeline:
+
+| Workflow | File | Trigger | Purpose |
+|---|---|---|---|
+| **CI** | `ci.yml` | Every push & PR | Lint, test, build (reusable) |
+| **Deploy Frontend** | `deploy.yml` | Push to `main` (dashboard changes) | Vercel production deploy |
+| **Deploy Backend** | `deploy-backend.yml` | Push to `main` (backend changes) | DigitalOcean container deploy |
+| **Pipeline Trigger** | `pipeline-trigger.yml` | Cron (every 4h) + manual | Insert sync task into Supabase |
+
+#### Required GitHub Secrets
+
+| Secret | Source | Purpose |
+|---|---|---|
+| `VERCEL_TOKEN` | [vercel.com/account/tokens](https://vercel.com/account/tokens) | Vercel CLI authentication |
+| `VERCEL_ORG_ID` | `.vercel/project.json` after `npx vercel link` | Identifies your Vercel account |
+| `VERCEL_PROJECT_ID` | `.vercel/project.json` after `npx vercel link` | Identifies the project |
+| `DIGITALOCEAN_ACCESS_TOKEN` | [DO API → Tokens](https://cloud.digitalocean.com/account/api/tokens) | doctl authentication |
+| `DIGITALOCEAN_APP_ID` | DO dashboard URL after app creation | Target app for deployment |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project settings | CI build env var |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project settings | CI build env var |
+| `NEXT_PUBLIC_ORCHESTRATOR_URL` | DigitalOcean app URL | CI build env var |
+| `SUPABASE_URL` | Supabase project settings | Pipeline trigger workflow |
+| `SUPABASE_KEY` | Supabase service role key | Pipeline trigger workflow |
+| `PIPELINE_USER_ID` | Your user UUID in Supabase | Pipeline trigger workflow |
+
+#### Deploy Flow
+
+```
+git push to main
+    │
+    ├── CI (ci.yml) runs first
+    │   ├── Backend: ruff check + pytest
+    │   ├── Dashboard: eslint + next build
+    │   └── Security: Gitleaks scan
+    │
+    ├── Deploy Frontend (deploy.yml) — only if apps/dashboard/** changed
+    │   └── vercel build --prod → vercel deploy --prebuilt --prod
+    │
+    └── Deploy Backend (deploy-backend.yml) — only if apps/tracker/** or apps/orchestrator/** changed
+        └── doctl apps create-deployment <APP_ID> --wait
+```
 
 ---
 
 ## 3. Post-Deployment Verification
-1. Call `GET /health` on the Orchestrator and confirm `"status": "ok"` and `"scheduler": true`.
-2. Open the Dashboard → **Pipeline** page and click **Manual Sync** to test the Gmail/Gemini integration.
-3. Watch the stage progress bars (Ingestion → Analysis → Persistence) advance in real time.
-4. Verify the **Stop Run**, **Resume Run**, and **Rerun from Stage** controls appear as run state changes.
-5. Check the **Execution History** table for a `success` result with non-zero `added`/`updated` stats.
+
+1. **Backend health**: `GET https://<your-do-app>.ondigitalocean.app/health`
+   - Expect: `{"status": "ok", "worker": "active", "scheduler": true}`
+2. **Frontend**: Visit your Vercel URL → Login → Navigate to Pipeline page.
+3. **Manual sync**: Click **Manual Sync** on the Pipeline page → Watch stage progress bars animate.
+4. **Cron verification**: Check GitHub Actions → `Scheduled Pipeline Sync` runs every 4 hours.
+5. **Telegram**: If enabled, verify you receive a consolidated run summary after the pipeline completes.
