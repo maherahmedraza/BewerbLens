@@ -77,6 +77,12 @@ class ApplicationMatcher:
         if thread_match:
             logger.debug(f"✓ Thread match (job verified): {thread_match['id']}")
             return thread_match
+            
+        # Strategy 4: "Not Specified" Fallback
+        # If the email lacks a job title, try to match it to an existing app for the company
+        fallback_match = self._match_not_specified_fallback(company_name, job_title, apps_cache)
+        if fallback_match:
+            return fallback_match
         
         logger.debug(f"✗ No match for: {company_name} / {job_title}")
         return None
@@ -211,6 +217,52 @@ class ApplicationMatcher:
                     # Don't return - continue searching for actual match
         
         return None
+    
+    def _match_not_specified_fallback(
+        self,
+        company_name: str,
+        job_title: str,
+        apps_cache: List[Dict]
+    ) -> Optional[Dict]:
+        """
+        Fallback strategy for emails where Gemini couldn't extract a job title (e.g. 'Not Specified').
+        If we have an existing application for this company, we map the generic email to it.
+        If there are multiple apps for the company, we map it to the most recent one.
+        """
+        job_clean = self._normalize_job_title(job_title)
+        
+        # Only apply fallback if incoming job title is generic/missing
+        if job_clean not in ["not specified", "unknown", "n/a", ""]:
+            return None
+            
+        company_clean = self._normalize_company_name(company_name)
+        
+        company_apps = []
+        for app in apps_cache:
+            if not app.get('is_active'):
+                continue
+                
+            app_company = self._normalize_company_name(app.get('company_name', ''))
+            company_sim = self._similarity(company_clean, app_company)
+            
+            if company_sim >= self.company_threshold:
+                company_apps.append(app)
+                
+        if not company_apps:
+            return None
+            
+        # Sort by last_updated or date_applied descending (most recent first)
+        company_apps.sort(
+            key=lambda x: x.get('last_updated') or x.get('date_applied', ''), 
+            reverse=True
+        )
+        
+        best_match = company_apps[0]
+        logger.info(
+            f"✓ Not Specified Fallback: Generic '{company_name}' email mapped to "
+            f"existing job '{best_match['job_title']}'"
+        )
+        return best_match
     
     def _normalize_company_name(self, name: str) -> str:
         """Normalize company names for matching."""
