@@ -15,7 +15,7 @@ from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 from config import settings
-from models import NotificationAction
+from models import NotificationAction, PipelineRunReport
 
 STATUS_EMOJI: dict[str, str] = {
     "Applied": "📝",
@@ -24,6 +24,70 @@ STATUS_EMOJI: dict[str, str] = {
     "Interview": "🤝",
     "Offer": "🏆",
 }
+
+def send_run_report_for_user(user: dict, report: PipelineRunReport) -> bool:
+    """
+    Sends a consolidated run report via Telegram.
+    """
+    if not settings.telegram_enabled or not user.get("telegram_enabled"):
+        return False
+
+    chat_id = user.get("telegram_chat_id") or settings.telegram_chat_id
+    if not settings.telegram_bot_token or not chat_id:
+        logger.warning("Telegram report failed: bot_token or chat_id is missing")
+        return False
+
+    # Format the report
+    duration_min = report.duration_seconds / 60
+    
+    status_summary = ""
+    for status, count in report.status_counts.items():
+        emoji = STATUS_EMOJI.get(status, "📌")
+        status_summary += f"{emoji} *{status}:* {count}\n"
+
+    # Limit lists to prevent massive messages
+    added_str = ", ".join(report.added_companies[:10])
+    if len(report.added_companies) > 10:
+        added_str += f" (+{len(report.added_companies) - 10} more)"
+    
+    updated_str = ", ".join(report.updated_companies[:10])
+    if len(report.updated_companies) > 10:
+        updated_str += f" (+{len(report.updated_companies) - 10} more)"
+
+    text = (
+        f"📊 *Pipeline Run Report*\n"
+        f"📧 *User:* {_escape_md(report.user_email)}\n"
+        f"🏷️ *Run:* {_escape_md(report.run_label)}\n"
+        f"⏱️ *Duration:* {duration_min:.1f} min\n\n"
+        f"✅ *New:* {report.added}\n"
+        f"🔄 *Updated:* {report.updated}\n"
+        f"⏭️ *Skipped:* {report.skipped}\n"
+        f"❌ *Errors:* {report.errors}\n\n"
+        f"{status_summary}\n"
+    )
+
+    if report.added_companies:
+        text += f"🆕 *Added:* {added_str}\n"
+    if report.updated_companies:
+        text += f"🆙 *Updated:* {updated_str}\n"
+    
+    if report.error_messages:
+        text += f"\n⚠️ *Errors:* {', '.join(report.error_messages[:3])}"
+
+    url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown",
+    }
+
+    try:
+        _post_to_telegram(url, payload)
+        logger.bind(user=report.user_email, run=report.run_label).info("Consolidated Telegram report sent")
+        return True
+    except Exception as error:
+        logger.bind(error=str(error)).error("Failed to send consolidated report")
+        return False
 
 # Telegram Markdown v1 special characters that break message rendering
 _MD_SPECIAL = re.compile(r"([*_`\[\]])")

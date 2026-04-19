@@ -119,6 +119,9 @@ class PipelineRunReport(BaseModel):
     updated_companies: list[str] = Field(default_factory=list)
     status_counts: dict[str, int] = Field(default_factory=dict)
     error_messages: list[str] = Field(default_factory=list)
+    run_label: str = ""
+    user_email: str = ""
+    duration_seconds: float = 0.0
 
 
 class EmailMetadata(BaseModel):
