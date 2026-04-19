@@ -227,10 +227,15 @@ def create_default_filters_for_user(client, user_id: str, region: str = 'en'):
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'talent', 'priority': 5},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'assessment', 'priority': 5},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'next steps', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'candidacy', 'priority': 6},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'position', 'priority': 6},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'role', 'priority': 6},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'action required', 'priority': 6},
             
             # EXCLUDE patterns
             {'filter_type': 'exclude', 'field': 'sender', 'pattern': 'noreply@linkedin.com', 'priority': 10},
             {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'job alert', 'priority': 10},
+            {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'jobalert', 'priority': 10},
             {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'recommended for you', 'priority': 10},
         ]
     
@@ -253,10 +258,16 @@ def create_default_filters_for_user(client, user_id: str, region: str = 'en'):
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'einstellung', 'priority': 5},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'talent', 'priority': 5},
             {'filter_type': 'include', 'field': 'subject', 'pattern': 'nächste schritte', 'priority': 5},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'kandidatur', 'priority': 6},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'stelle', 'priority': 6},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'position', 'priority': 6},
+            {'filter_type': 'include', 'field': 'subject', 'pattern': 'profil', 'priority': 6},
             
             # EXCLUDE patterns
             {'filter_type': 'exclude', 'field': 'sender', 'pattern': 'noreply@linkedin.com', 'priority': 10},
             {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'jobalarm', 'priority': 10},
+            {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'job alert', 'priority': 10},
+            {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'empfehlungen', 'priority': 10},
         ]
     
     else:

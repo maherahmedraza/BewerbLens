@@ -26,27 +26,26 @@ from models import (
 from classifier_base import EmailClassifier
 
 # System prompt — optimized for performance and structure
-CLASSIFICATION_PROMPT = """You are a job application email classifier for a German job seeker.
-Classify each email into exactly one of 4 types. Return ONLY valid JSON that matches the provided response schema.
+CLASSIFICATION_PROMPT = """You are an expert job application email classifier for a German-based job seeker.
+Classify each email into exactly one of 4 types. The emails may be in English or German.
+Return ONLY valid JSON that matches the provided response schema.
 
 TYPES:
-1. "application_confirmation" - Company confirmed receiving YOUR job application
-2. "rejection" - Application was declined
-3. "positive_response" - Interview invite, assessment, or offer
-4. "not_job_related" - Everything else (job alerts, newsletters, etc)
+1. "application_confirmation" - Company confirmed receiving YOUR job application (e.g., "Eingangsbestätigung", "vielen Dank für Ihre Bewerbung")
+2. "rejection" - Application was declined (e.g., "Absage", "Leider müssen wir Ihnen heute mitteilen", "nicht weiter berücksichtigen")
+3. "positive_response" - Interview invite, assessment, or offer (e.g., "Einladung zum Vorstellungsgespräch", "nächste Schritte", "Interview")
+4. "not_job_related" - Everything else (job alerts, marketing, internal company news)
 
-EXTRACTION:
-- company_name: The HIRING company, NOT the platform (e.g., extract from body if sender is SmartRecruiters)
-- job_title: Exact role title or "Not Specified"
-- platform: SmartRecruiters, Personio, Workday, Lever, Greenhouse, Softgarden, JOIN, StepStone, Indeed, Xing, LinkedIn, Direct
-- location: City/Remote or empty string
-- job_listing_url: If found in body
+EXTRACTION RULES:
+- company_name: The actual HIRING company (e.g., "Körber", "Schwarz Digits").
+- job_title: Exact role title.
+- platform: SmartRecruiters, Personio, Workday, Greenhouse, JOIN, Direct, etc.
 - confidence: 0.0 to 1.0
 
-EMAILS:
+EMAILS TO CLASSIFY:
 {emails_text}
 
-JSON response object:
+JSON response format:
 {{"results":[{{"email_index":1,"classification":"...","company_name":"...","job_title":"...","platform":"...","location":"...","job_listing_url":"","salary_range":"","confidence":0.9,"reasoning":"..."}}]}}"""
 
 
