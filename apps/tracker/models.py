@@ -109,6 +109,18 @@ class PersistenceStageStats(BaseModel):
     report: Optional["PipelineRunReport"] = Field(default=None, exclude=True)
 
 
+class PipelineRunReport(BaseModel):
+    """Consolidated report data for Telegram notification."""
+    added: int = 0
+    updated: int = 0
+    skipped: int = 0
+    errors: int = 0
+    added_companies: list[str] = Field(default_factory=list)
+    updated_companies: list[str] = Field(default_factory=list)
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    error_messages: list[str] = Field(default_factory=list)
+
+
 class EmailMetadata(BaseModel):
     email_id: str
     thread_id: str
