@@ -1,0 +1,41 @@
+# BewerbLens Docker Ignore
+# Keep the image lean — only copy what the orchestrator needs
+
+# Git & IDE
+.git
+.github
+.gitignore
+.gitattributes
+.vscode
+.idea
+.kilo
+.agents
+
+# Node/Frontend (not needed in Python image)
+apps/dashboard
+node_bin
+node_modules
+*.lock
+package*.json
+
+# Python caches
+__pycache__
+*.pyc
+.ruff_cache
+.venv
+venv
+.pytest_cache
+test-results
+
+# Docs & config
+docs
+db
+*.md
+LICENSE
+.pre-commit-config.yaml
+.ruff.toml
+.env
+.env.*
+
+# Scratch/temp
+scratch

@@ -1,0 +1,65 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  Deploy Frontend → Vercel                                  ║
+# ║                                                             ║
+# ║  Triggers on push to main after CI passes.                 ║
+# ║                                                             ║
+# ║  Required GitHub Secrets:                                  ║
+# ║  • VERCEL_TOKEN                                             ║
+# ║  • VERCEL_ORG_ID                                            ║
+# ║  • VERCEL_PROJECT_ID                                        ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+name: Deploy Frontend (Vercel)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/dashboard/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-frontend
+  cancel-in-progress: true
+
+jobs:
+  ci-gate:
+    name: CI Gate
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  deploy-vercel:
+    name: Deploy Dashboard → Vercel
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    environment:
+      name: production-frontend
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel
+
+      - name: Pull Vercel config
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: apps/dashboard
+
+      - name: Build for production
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: apps/dashboard
+
+      - name: Deploy
+        id: deploy
+        run: |
+          URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "### 🚀 Dashboard deployed!" >> "$GITHUB_STEP_SUMMARY"
+          echo "**URL:** $URL" >> "$GITHUB_STEP_SUMMARY"
+        working-directory: apps/dashboard
