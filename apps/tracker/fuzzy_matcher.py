@@ -311,21 +311,49 @@ def upsert_application_fixed(
             import json
             current_history = json.loads(current_history)
         
+        # Deduplicate: skip if this email is already in history
+        existing_email_ids = {
+            entry.get("source_email_id") or entry.get("email_id")
+            for entry in current_history
+            if isinstance(entry, dict)
+        }
+        if email.email_id in existing_email_ids:
+            logger.debug(
+                f"⊘ Skipping duplicate email {email.email_id} for "
+                f"{classification.company_name} / {classification.job_title}"
+            )
+            return "updated"
+        
         current_history.append(status_update)
+        
+        # ═══ New Logic: Calculate Correct Current Status ═══
+        # 1. Sort history by timestamp (date)
+        try:
+            current_history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        except Exception:
+            pass # Keep original order if sorting fails
+            
+        # 2. Derive the current status from the most recent entries
+        # We look at the latest entry, but we also respect STATUS_PRIORITY 
+        # (e.g., if multiple updates happen on the same day, Rejected beats Applied)
+        from models import Status
+        
+        latest_entry = current_history[0]
+        calculated_status = latest_entry.get('status', status_value)
         
         # Update application
         client.table("applications").update({
-            "status": status_value,
+            "status": calculated_status,
             "status_history": current_history,
             "email_count": len(current_history),
             "last_updated": "now()",
-            "email_subject": email.subject,
-            "source_email_id": email.email_id
+            "email_subject": latest_entry.get('email_subject') or email.subject,
+            "source_email_id": latest_entry.get('source_email_id') or email.email_id
         }).eq("id", existing_app['id']).execute()
         
         logger.info(
             f"✓ UPDATED: {classification.company_name} / {classification.job_title} "
-            f"(now {len(current_history)} emails)"
+            f"→ Status: {calculated_status} ({len(current_history)} emails)"
         )
         return "updated"
     
@@ -345,23 +373,52 @@ def upsert_application_fixed(
             "confidence": classification.confidence
         }
         
-        client.table("applications").insert({
-            "user_id": user_id,
-            "thread_id": email.thread_id,
-            "company_name": classification.company_name,
-            "job_title": classification.job_title,
-            "platform": classification.platform,
-            "status": status_value,
-            "confidence": classification.confidence,
-            "email_subject": email.subject,
-            "email_from": email.sender_email,
-            "date_applied": str(email.date),
-            "gmail_link": email.gmail_link,
-            "source_email_id": email.email_id,
-            "status_history": [initial_status],
-            "email_count": 1,
-            "is_active": True
-        }).execute()
+        try:
+            client.table("applications").insert({
+                "user_id": user_id,
+                "thread_id": email.thread_id,
+                "company_name": classification.company_name,
+                "job_title": classification.job_title,
+                "platform": classification.platform,
+                "status": status_value,
+                "confidence": classification.confidence,
+                "email_subject": email.subject,
+                "email_from": email.sender_email,
+                "date_applied": str(email.date),
+                "gmail_link": email.gmail_link,
+                "source_email_id": email.email_id,
+                "status_history": [initial_status],
+                "email_count": 1,
+                "is_active": True
+            }).execute()
+        except Exception as insert_error:
+            error_str = str(insert_error)
+            if "23505" in error_str or "duplicate key" in error_str:
+                # thread_id conflict: another application already uses this thread.
+                # Store without thread_id to avoid data loss.
+                logger.warning(
+                    f"⚠ thread_id conflict for {classification.company_name} / "
+                    f"{classification.job_title} — inserting without thread_id"
+                )
+                client.table("applications").insert({
+                    "user_id": user_id,
+                    "thread_id": None,
+                    "company_name": classification.company_name,
+                    "job_title": classification.job_title,
+                    "platform": classification.platform,
+                    "status": status_value,
+                    "confidence": classification.confidence,
+                    "email_subject": email.subject,
+                    "email_from": email.sender_email,
+                    "date_applied": str(email.date),
+                    "gmail_link": email.gmail_link,
+                    "source_email_id": email.email_id,
+                    "status_history": [initial_status],
+                    "email_count": 1,
+                    "is_active": True
+                }).execute()
+            else:
+                raise
         
         logger.info(
             f"✓ ADDED: {classification.company_name} / {classification.job_title}"
