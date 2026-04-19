@@ -42,19 +42,18 @@ export default function ApplicationThreadCard({ application }: ApplicationThread
     return (
       <div className="timeline">
         {application.status_history.map((update, index) => {
-          const u = update as unknown as Record<string, unknown>;
-          const timestamp = u.timestamp || u.changed_at || u.date;
-          const source_email_id = u.source_email_id || u.email_id || `migration-${index}`;
-          const confidence = (u.confidence ?? 0.8) as number;
+          const timestamp = update.timestamp || update.changed_at || update.date;
+          const key = update.source_email_id || update.email_id || `migration-${index}`;
+          const confidence = update.confidence ?? 0.8;
           
           return (
-            <div key={source_email_id} className="timeline-item">
-              <div className="timeline-marker" style={{ backgroundColor: statusColors[update.status] }}>
+            <div key={key} className="timeline-item">
+              <div className="timeline-marker" style={{ backgroundColor: statusColors[update.status] || '#6b7280' }}>
                 {index + 1}
               </div>
               <div className="timeline-content">
                 <div className="timeline-header">
-                  <span className="timeline-status" style={{ color: statusColors[update.status] }}>
+                  <span className="timeline-status" style={{ color: statusColors[update.status] || '#6b7280' }}>
                     {update.status}
                   </span>
                   <span className="timeline-date">

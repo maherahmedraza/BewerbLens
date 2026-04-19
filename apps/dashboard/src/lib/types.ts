@@ -26,6 +26,7 @@ export interface StatusHistoryEntry {
   timestamp: string;
   changed_at?: string;
   date?: string;
+  email_id?: string;
   email_subject: string;
   source_email_id: string;
   confidence: number;
