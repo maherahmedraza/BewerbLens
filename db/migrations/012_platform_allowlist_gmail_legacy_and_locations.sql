@@ -190,7 +190,15 @@ SELECT
     ) AS pct
 FROM applications
 WHERE is_active = true
-GROUP BY user_id, location
+GROUP BY 
+    user_id, 
+    COALESCE(
+        NULLIF(job_city, ''),
+        NULLIF(job_country, ''),
+        NULLIF(job_location, ''),
+        NULLIF(location, ''),
+        'Location not specified'
+    )
 ORDER BY count DESC;
 
 ALTER VIEW location_breakdown SET (security_invoker = true);
