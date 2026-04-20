@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  Telegram Notifier — Status & Run Notifications             ║
 # ║                                                             ║
@@ -9,8 +11,9 @@
 # ╚══════════════════════════════════════════════════════════════╝
 
 import re
-import requests
 from datetime import datetime, timezone
+
+import requests
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_fixed
 
@@ -45,6 +48,20 @@ def _post_to_telegram(url: str, payload: dict) -> None:
     """Sends a single HTTP request to the Telegram Bot API."""
     response = requests.post(url, json=payload, timeout=10)
     response.raise_for_status()
+
+
+def _mask_chat_id(chat_id: str | None) -> str:
+    digits = re.sub(r"\D", "", chat_id or "")
+    if not digits:
+        return "unknown"
+    return f"...{digits[-4:]}"
+
+
+def _extract_telegram_error(error: Exception) -> str:
+    if isinstance(error, requests.HTTPError) and error.response is not None:
+        body = error.response.text[:300]
+        return f"HTTP {error.response.status_code}: {body}"
+    return str(error)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -127,17 +144,18 @@ def _build_report_message(report: PipelineRunReport) -> str:
     return "\n".join(lines)
 
 
-def send_run_report_for_user(user: dict, report: PipelineRunReport) -> bool:
+def send_run_report_for_user(user: dict, report: PipelineRunReport) -> tuple[bool, str | None]:
     """Sends a consolidated report using per-user or global credentials."""
     if not settings.telegram_enabled or not user.get("telegram_enabled"):
-        return False
+        return False, None
 
     bot_token = user.get("telegram_bot_token") or settings.telegram_bot_token
     chat_id = user.get("telegram_chat_id") or settings.telegram_chat_id
 
     if not bot_token or not chat_id:
-        logger.warning("Telegram report failed: bot_token or chat_id is missing")
-        return False
+        error_message = "Telegram report skipped: bot_token or chat_id is missing"
+        logger.warning(error_message)
+        return False, error_message
 
     text = _build_report_message(report)
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -146,9 +164,39 @@ def send_run_report_for_user(user: dict, report: PipelineRunReport) -> bool:
     try:
         _post_to_telegram(url, payload)
         logger.bind(user=report.user_email).info("Consolidated Telegram report sent")
+        return True, None
+    except Exception as error:
+        error_message = _extract_telegram_error(error)
+        logger.bind(chat_id=_mask_chat_id(str(chat_id)), error=error_message).error(
+            "Failed to send consolidated report"
+        )
+        return False, error_message
+
+
+def verify_telegram_connection(chat_id: str, bot_token: str) -> bool:
+    if not chat_id:
+        logger.warning("Telegram verification skipped: chat_id is missing")
+        return False
+    if not bot_token:
+        logger.warning("Telegram verification skipped: bot_token is missing")
+        return False
+    if not re.fullmatch(r"-?\d+", str(chat_id)):
+        logger.warning(f"Telegram verification skipped: invalid chat_id format for {_mask_chat_id(chat_id)}")
+        return False
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": "BewerbLens connection verified.",
+    }
+    try:
+        _post_to_telegram(url, payload)
+        logger.bind(chat_id=_mask_chat_id(chat_id)).info("Telegram connection verified")
         return True
     except Exception as error:
-        logger.bind(error=str(error)).error("Failed to send consolidated report")
+        logger.bind(chat_id=_mask_chat_id(chat_id), error=_extract_telegram_error(error)).error(
+            "Telegram verification failed"
+        )
         return False
 
 

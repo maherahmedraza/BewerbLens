@@ -75,12 +75,13 @@ CREATE TABLE IF NOT EXISTS email_filters (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
 
-    filter_type TEXT NOT NULL CHECK (filter_type IN ('include', 'exclude')),
+    filter_type TEXT NOT NULL CHECK (filter_type IN ('include', 'exclude', 'platform_allowlist')),
     field TEXT NOT NULL CHECK (field IN ('subject', 'sender', 'body')),
     pattern TEXT NOT NULL,
 
     is_regex BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
+    is_protected BOOLEAN DEFAULT false,
     priority INTEGER DEFAULT 0,
 
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -103,35 +104,78 @@ CREATE INDEX IF NOT EXISTS idx_email_filters_active ON email_filters(user_id, is
 CREATE OR REPLACE FUNCTION create_default_filters(p_user_id UUID, p_region TEXT)
 RETURNS void AS $$
 BEGIN
+    INSERT INTO email_filters (user_id, filter_type, field, pattern, is_regex, is_protected, priority)
+    SELECT p_user_id, defaults.filter_type, defaults.field, defaults.pattern, defaults.is_regex, defaults.is_protected, defaults.priority
+    FROM (
+        VALUES
+            ('platform_allowlist', 'sender', 'jobs-noreply@linkedin.com', false, true, -100),
+            ('platform_allowlist', 'sender', 'noreply@xing.com', false, true, -100),
+            ('platform_allowlist', 'sender', 'no-reply@stepstone.de', false, true, -100),
+            ('platform_allowlist', 'sender', 'noreply@indeed.com', false, true, -100),
+            ('platform_allowlist', 'sender', 'noreply@glassdoor.com', false, true, -100)
+    ) AS defaults(filter_type, field, pattern, is_regex, is_protected, priority)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM email_filters ef
+        WHERE ef.user_id = p_user_id
+          AND ef.filter_type = defaults.filter_type
+          AND ef.field = defaults.field
+          AND lower(ef.pattern) = lower(defaults.pattern)
+    );
+
     IF p_region = 'en' THEN
-        INSERT INTO email_filters (user_id, filter_type, field, pattern, is_regex, priority) VALUES
-        (p_user_id, 'include', 'subject', 'application', false, 1),
-        (p_user_id, 'include', 'subject', 'applied', false, 1),
-        (p_user_id, 'include', 'subject', 'confirmation', false, 1),
-        (p_user_id, 'include', 'subject', 'thank you for applying', false, 1),
-        (p_user_id, 'include', 'subject', 'interview', false, 2),
-        (p_user_id, 'include', 'subject', 'offer', false, 2),
-        (p_user_id, 'include', 'subject', 'rejection', false, 3),
-        (p_user_id, 'include', 'subject', 'unfortunately', false, 3),
-        (p_user_id, 'include', 'subject', 'regret to inform', false, 3),
-        (p_user_id, 'exclude', 'sender', 'noreply@linkedin.com', false, 10),
-        (p_user_id, 'exclude', 'subject', 'job alert', false, 10),
-        (p_user_id, 'exclude', 'subject', 'recommended for you', false, 10);
+        INSERT INTO email_filters (user_id, filter_type, field, pattern, is_regex, priority)
+        SELECT p_user_id, defaults.filter_type, defaults.field, defaults.pattern, defaults.is_regex, defaults.priority
+        FROM (
+            VALUES
+                ('include', 'subject', 'application', false, 1),
+                ('include', 'subject', 'applied', false, 1),
+                ('include', 'subject', 'confirmation', false, 1),
+                ('include', 'subject', 'thank you for applying', false, 1),
+                ('include', 'subject', 'interview', false, 2),
+                ('include', 'subject', 'offer', false, 2),
+                ('include', 'subject', 'rejection', false, 3),
+                ('include', 'subject', 'unfortunately', false, 3),
+                ('include', 'subject', 'regret to inform', false, 3),
+                ('exclude', 'sender', 'noreply@linkedin.com', false, 10),
+                ('exclude', 'subject', 'job alert', false, 10),
+                ('exclude', 'subject', 'recommended for you', false, 10)
+        ) AS defaults(filter_type, field, pattern, is_regex, priority)
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM email_filters ef
+            WHERE ef.user_id = p_user_id
+              AND ef.filter_type = defaults.filter_type
+              AND ef.field = defaults.field
+              AND lower(ef.pattern) = lower(defaults.pattern)
+        );
 
     ELSIF p_region = 'de' THEN
-        INSERT INTO email_filters (user_id, filter_type, field, pattern, is_regex, priority) VALUES
-        (p_user_id, 'include', 'subject', 'bewerbung', false, 1),
-        (p_user_id, 'include', 'subject', 'beworben', false, 1),
-        (p_user_id, 'include', 'subject', 'eingangsbestätigung', false, 1),
-        (p_user_id, 'include', 'subject', 'bestätigung', false, 1),
-        (p_user_id, 'include', 'subject', 'interview', false, 2),
-        (p_user_id, 'include', 'subject', 'gespräch', false, 2),
-        (p_user_id, 'include', 'subject', 'absage', false, 3),
-        (p_user_id, 'include', 'subject', 'leider', false, 3),
-        (p_user_id, 'include', 'subject', 'rückmeldung', false, 3),
-        (p_user_id, 'exclude', 'sender', 'noreply@linkedin.com', false, 10),
-        (p_user_id, 'exclude', 'subject', 'jobalarm', false, 10),
-        (p_user_id, 'exclude', 'subject', 'empfohlen', false, 10);
+        INSERT INTO email_filters (user_id, filter_type, field, pattern, is_regex, priority)
+        SELECT p_user_id, defaults.filter_type, defaults.field, defaults.pattern, defaults.is_regex, defaults.priority
+        FROM (
+            VALUES
+                ('include', 'subject', 'bewerbung', false, 1),
+                ('include', 'subject', 'beworben', false, 1),
+                ('include', 'subject', 'eingangsbestätigung', false, 1),
+                ('include', 'subject', 'bestätigung', false, 1),
+                ('include', 'subject', 'interview', false, 2),
+                ('include', 'subject', 'gespräch', false, 2),
+                ('include', 'subject', 'absage', false, 3),
+                ('include', 'subject', 'leider', false, 3),
+                ('include', 'subject', 'rückmeldung', false, 3),
+                ('exclude', 'sender', 'noreply@linkedin.com', false, 10),
+                ('exclude', 'subject', 'jobalarm', false, 10),
+                ('exclude', 'subject', 'empfohlen', false, 10)
+        ) AS defaults(filter_type, field, pattern, is_regex, priority)
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM email_filters ef
+            WHERE ef.user_id = p_user_id
+              AND ef.filter_type = defaults.filter_type
+              AND ef.field = defaults.field
+              AND lower(ef.pattern) = lower(defaults.pattern)
+        );
     END IF;
 END;
 $$ LANGUAGE plpgsql;

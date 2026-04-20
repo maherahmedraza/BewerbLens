@@ -17,6 +17,7 @@ interface LegacyProfileRow {
 interface EnhancedProfileRow extends LegacyProfileRow {
   role?: "user" | "admin" | null;
   gmail_connected_at?: string | null;
+  gmail_connected_via?: "oauth" | "env_fallback" | null;
   telegram_connected_at?: string | null;
   sync_mode?: SyncMode | null;
   sync_status?: SyncStatus | null;
@@ -34,6 +35,7 @@ export interface CompatibleUserProfile {
   telegram_enabled: boolean;
   gmail_connected: boolean;
   gmail_connected_at: string | null;
+  gmail_connected_via: "oauth" | "env_fallback" | null;
   telegram_connected: boolean;
   telegram_connected_at: string | null;
   sync_mode: SyncMode;
@@ -47,8 +49,11 @@ export interface CompatibleUserProfile {
 const LEGACY_PROFILE_SELECT =
   "id, email, full_name, region, gmail_credentials, telegram_enabled, telegram_chat_id";
 
-const ENHANCED_PROFILE_SELECT =
+const ENHANCED_PROFILE_SELECT_V1 =
   `${LEGACY_PROFILE_SELECT}, role, gmail_connected_at, telegram_connected_at, sync_mode, sync_status, backfill_start_date, last_synced_at, sync_error`;
+
+const ENHANCED_PROFILE_SELECT_V2 =
+  `${ENHANCED_PROFILE_SELECT_V1}, gmail_connected_via`;
 
 function isMissingColumnError(error: { message?: string } | null) {
   const message = String(error?.message || "").toLowerCase();
@@ -70,8 +75,16 @@ function normalizeProfile(
   row: LegacyProfileRow | EnhancedProfileRow,
   supportsSyncSchema: boolean
 ): CompatibleUserProfile {
+  const gmailConnectedVia =
+    "gmail_connected_via" in row && row.gmail_connected_via
+      ? row.gmail_connected_via
+      : row.gmail_credentials
+        ? "oauth"
+        : null;
   const gmailConnected = Boolean(
-    ("gmail_connected_at" in row ? row.gmail_connected_at : null) || row.gmail_credentials
+    gmailConnectedVia === "env_fallback" ||
+      ("gmail_connected_at" in row ? row.gmail_connected_at : null) ||
+      row.gmail_credentials
   );
   const telegramConnected = Boolean(
     ("telegram_connected_at" in row ? row.telegram_connected_at : null) || row.telegram_chat_id
@@ -87,6 +100,7 @@ function normalizeProfile(
     gmail_connected: gmailConnected,
     gmail_connected_at:
       supportsSyncSchema && "gmail_connected_at" in row ? row.gmail_connected_at ?? null : null,
+    gmail_connected_via: gmailConnectedVia,
     telegram_connected: telegramConnected,
     telegram_connected_at:
       supportsSyncSchema && "telegram_connected_at" in row
@@ -109,21 +123,38 @@ async function fetchProfileRow(
   supabase: SupabaseClient,
   userId: string
 ): Promise<{ row: LegacyProfileRow | EnhancedProfileRow | null; supportsSyncSchema: boolean }> {
-  const enhanced = await supabase
+  const enhancedV2 = await supabase
     .from("user_profiles")
-    .select(ENHANCED_PROFILE_SELECT)
+    .select(ENHANCED_PROFILE_SELECT_V2)
     .eq("id", userId)
     .maybeSingle();
 
-  if (!enhanced.error) {
+  if (!enhancedV2.error) {
     return {
-      row: (enhanced.data as EnhancedProfileRow | null) ?? null,
+      row: (enhancedV2.data as EnhancedProfileRow | null) ?? null,
       supportsSyncSchema: true,
     };
   }
 
-  if (!isMissingColumnError(enhanced.error)) {
-    throw enhanced.error;
+  if (!isMissingColumnError(enhancedV2.error)) {
+    throw enhancedV2.error;
+  }
+
+  const enhancedV1 = await supabase
+    .from("user_profiles")
+    .select(ENHANCED_PROFILE_SELECT_V1)
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (!enhancedV1.error) {
+    return {
+      row: (enhancedV1.data as EnhancedProfileRow | null) ?? null,
+      supportsSyncSchema: true,
+    };
+  }
+
+  if (!isMissingColumnError(enhancedV1.error)) {
+    throw enhancedV1.error;
   }
 
   const legacy = await supabase

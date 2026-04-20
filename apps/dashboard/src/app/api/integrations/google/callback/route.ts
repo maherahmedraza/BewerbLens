@@ -1,39 +1,73 @@
 import { subMonths } from "date-fns";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { encryptJson } from "@/lib/encryption";
-import { createGoogleOAuthClient, GMAIL_SCOPES, parseOAuthState } from "@/lib/server/google-oauth";
+import {
+  createGoogleOAuthClient,
+  GMAIL_SCOPES,
+  getMissingGoogleOAuthEnvVars,
+  isValidOAuthStateCookie,
+  parseOAuthState,
+} from "@/lib/server/google-oauth";
 import { createClient } from "@/lib/supabase/server";
 
-export async function GET(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export const runtime = "nodejs";
 
-  if (!user) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
-  const state = parseOAuthState(searchParams.get("state"));
-  const redirectUrl = new URL(state.next, origin);
-
-  if (!code) {
-    redirectUrl.searchParams.set("gmail", "error");
-    redirectUrl.searchParams.set("message", "Missing Google authorization code.");
-    return NextResponse.redirect(redirectUrl);
-  }
-
+function buildRedirect(origin: string, nextPath: string) {
   try {
+    return new URL(nextPath, origin);
+  } catch {
+    return new URL("/profile", origin);
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    const missingVars = getMissingGoogleOAuthEnvVars();
+    const { searchParams, origin } = new URL(request.url);
+    const state = parseOAuthState(searchParams.get("state"));
+    const redirectUrl = buildRedirect(origin, state.next);
+    const responseWithError = (message: string) => {
+      redirectUrl.searchParams.set("gmail", "error");
+      redirectUrl.searchParams.set("message", message);
+      const response = NextResponse.redirect(redirectUrl);
+      response.cookies.delete("google_oauth_state");
+      return response;
+    };
+
+    if (missingVars.length > 0) {
+      return responseWithError(
+        `Google OAuth is not configured. Missing: ${missingVars.join(", ")}`
+      );
+    }
+
+    const code = searchParams.get("code");
+    if (!code) {
+      return responseWithError("Missing Google authorization code.");
+    }
+
+    const stateCookie = (await cookies()).get("google_oauth_state")?.value;
+    if (!isValidOAuthStateCookie(stateCookie, state.nonce)) {
+      return responseWithError("Google OAuth session expired. Please try connecting Gmail again.");
+    }
+
     const oauthClient = createGoogleOAuthClient();
     const { tokens } = await oauthClient.getToken(code);
 
     if (!tokens.refresh_token) {
-      redirectUrl.searchParams.set("gmail", "error");
-      redirectUrl.searchParams.set("message", "Google did not return a refresh token. Reconnect and grant consent again.");
-      return NextResponse.redirect(redirectUrl);
+      return responseWithError(
+        "Google did not return a refresh token. Reconnect and grant consent again."
+      );
     }
 
     const { data: profile } = await supabase
@@ -60,6 +94,7 @@ export async function GET(request: Request) {
       .from("user_profiles")
       .update({
         gmail_credentials: credentials,
+        gmail_connected_via: "oauth",
         gmail_connected_at: new Date().toISOString(),
         backfill_start_date: backfillStartDate,
         sync_mode: "backfill",
@@ -73,13 +108,20 @@ export async function GET(request: Request) {
     }
 
     redirectUrl.searchParams.set("gmail", "connected");
-    return NextResponse.redirect(redirectUrl);
+    const response = NextResponse.redirect(redirectUrl);
+    response.cookies.delete("google_oauth_state");
+    return response;
   } catch (error) {
+    const { origin, searchParams } = new URL(request.url);
+    const state = parseOAuthState(searchParams.get("state"));
+    const redirectUrl = buildRedirect(origin, state.next);
     redirectUrl.searchParams.set("gmail", "error");
     redirectUrl.searchParams.set(
       "message",
       error instanceof Error ? error.message : "Failed to connect Gmail."
     );
-    return NextResponse.redirect(redirectUrl);
+    const response = NextResponse.redirect(redirectUrl);
+    response.cookies.delete("google_oauth_state");
+    return response;
   }
 }

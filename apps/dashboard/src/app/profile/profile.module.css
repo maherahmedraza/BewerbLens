@@ -239,6 +239,19 @@
   font-size: 14px;
 }
 
+.protectedBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-green-soft);
+  color: var(--accent-green);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .filterPattern {
   flex: 1;
   min-width: 200px;
@@ -274,6 +287,11 @@
 .btnIconDanger:hover {
   background: var(--accent-red-soft);
   border-color: var(--accent-red);
+}
+
+.btnIconDanger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .icon {

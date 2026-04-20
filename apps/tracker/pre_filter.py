@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  Pre-Filter (Multi-User) — Database-Driven Filters          ║
 # ║                                                             ║
@@ -5,10 +7,19 @@
 # ║  Replaces hardcoded filter logic                            ║
 # ╚══════════════════════════════════════════════════════════════╝
 
+from dataclasses import dataclass
 import re
 from typing import List, Tuple
-from dataclasses import dataclass
+
 from loguru import logger
+
+PLATFORM_ALLOWLIST_SENDERS = (
+    "jobs-noreply@linkedin.com",
+    "noreply@xing.com",
+    "no-reply@stepstone.de",
+    "noreply@indeed.com",
+    "noreply@glassdoor.com",
+)
 
 
 @dataclass
@@ -59,6 +70,24 @@ def apply_user_filters(client, user_id: str, emails: List) -> Tuple[List, Filter
     
     logger.info(f"Applying {len(filters)} filters for user {user_id}")
     
+    platform_allowlist_filters = [f for f in filters if f["filter_type"].lower() == "platform_allowlist"]
+    seeded_allowlist_filters = list(platform_allowlist_filters)
+    existing_patterns = {f.get("pattern", "").lower() for f in seeded_allowlist_filters}
+    for sender in PLATFORM_ALLOWLIST_SENDERS:
+        if sender in existing_patterns:
+            continue
+        seeded_allowlist_filters.append(
+            {
+                "filter_type": "platform_allowlist",
+                "field": "sender",
+                "pattern": sender,
+                "is_regex": False,
+                "is_active": True,
+                "priority": -100,
+                "is_protected": True,
+            }
+        )
+
     # Separate INCLUDE and EXCLUDE filters
     include_filters = [f for f in filters if f['filter_type'].lower() == 'include']
     exclude_filters = [f for f in filters if f['filter_type'].lower() == 'exclude']
@@ -67,6 +96,11 @@ def apply_user_filters(client, user_id: str, emails: List) -> Tuple[List, Filter
     details = []
     
     for email in emails:
+        if _matches_any_filter(email, seeded_allowlist_filters):
+            logger.debug(f"Email '{email.subject}' bypassed filters via platform allowlist")
+            passed.append(email)
+            continue
+
         # Step 1: Check INCLUDE filters (whitelist)
         if include_filters:
             if not _matches_any_filter(email, include_filters):

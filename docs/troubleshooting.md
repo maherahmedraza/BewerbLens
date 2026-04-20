@@ -93,3 +93,44 @@ Common issues and their resolutions.
 - **Cause**: Missing `SUPABASE_URL`, `SUPABASE_KEY`, or `PIPELINE_USER_ID` GitHub secrets.
 - **Fix**: Verify all three secrets are set in GitHub → Settings → Secrets. You can test manually via the **workflow_dispatch** trigger.
 
+## 15. LinkedIn / Platform Confirmation Emails Get Filtered Out
+**Symptoms**: `jobs-noreply@linkedin.com` or similar ATS confirmation emails never reach Gemini even though the sender clearly refers to an application submission.
+- **Cause**: User-defined include/exclude filters were evaluated without a protected platform allowlist, so LinkedIn-style senders could be blocked before classification.
+- **Fix**: Apply migration `012_platform_allowlist_gmail_legacy_and_locations.sql` and redeploy the tracker so `platform_allowlist` rules are seeded and short-circuited in `apps/tracker/pre_filter.py`.
+- **Prevention**: Keep job-platform senders in the protected allowlist and never rely on ordinary exclude rules for them.
+
+## 16. Gmail Shows "Not Connected" While the Pipeline Still Syncs
+**Symptoms**: The pipeline log shows `Using env Gmail token (single-user mode)` but the Profile page still says Gmail is disconnected.
+- **Cause**: The backend was syncing through the legacy env-token fallback while the dashboard only looked for stored per-user OAuth credentials.
+- **Fix**: Apply migration `012_platform_allowlist_gmail_legacy_and_locations.sql`, then redeploy both dashboard and tracker so `user_profiles.gmail_connected_via` is written as `env_fallback` and the Profile / Settings pages show legacy mode correctly.
+- **Prevention**: Prefer per-user OAuth, but if env fallback is still enabled, always persist the connection mode in `user_profiles`.
+
+## 17. `/api/integrations/google/start` Returns HTTP 500
+**Symptoms**: Clicking **Connect Gmail** produces a blank error page or raw 500.
+- **Cause**: Google OAuth env vars were missing or the route threw during startup without returning a structured response.
+- **Fix**: Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_OAUTH_REDIRECT_URI` in Vercel, then redeploy the dashboard. The route now validates env vars, runs on Node.js, and checks a signed CSRF state cookie before the callback exchanges tokens.
+- **Prevention**: Treat all OAuth route handlers as server-only Node.js endpoints and fail with explicit 503/redirect errors instead of uncaught exceptions.
+
+## 18. Operational Analytics Show Zero AI Requests
+**Symptoms**: The run clearly classified emails, but Analytics still shows `AI requests: 0` and `$0.00`.
+- **Cause**: `GeminiClassifier` returned classifications but never populated `classifier.last_usage`, so downstream analytics persisted zeros.
+- **Fix**: Redeploy the tracker after the Gemini usage patch so prompt/output tokens and estimated cost are captured per API call and written into both `usage_metrics` and `pipeline_runs.summary_stats`.
+- **Prevention**: Any classifier implementation must update usage counters alongside the classification result payload.
+
+## 19. Telegram Report Fails Silently
+**Symptoms**: A run succeeds but Analytics shows `Telegram notifications: 0 | 1 failed`, with no actionable reason.
+- **Cause**: The notifier swallowed the failure with only a generic error message and did not carry the Telegram error into run summaries.
+- **Fix**: Redeploy the tracker so Telegram failures log the HTTP status/body with a masked chat ID and persist `telegram_failed` / `telegram_error` into the run summary.
+- **Prevention**: Notification failures must always surface in logs and summary stats, even when they are non-fatal for the pipeline.
+
+## 20. Follow-up Status Emails Create Duplicates Instead of Updates
+**Symptoms**: Rejection or interview follow-ups for an existing application create a second row instead of updating the first one.
+- **Cause**: The fuzzy matcher was too strict for common ATS suffixes like `(3228)` or descriptive German qualifiers like `Bereich Trockenlager für ...`.
+- **Fix**: Redeploy the tracker with the relaxed `composite_threshold` and the updated normalization logic in `apps/tracker/fuzzy_matcher.py`; the included tests cover the reported Schwarz and Servicebund examples.
+- **Prevention**: Keep fuzzy-match tests for real-world job title variants whenever you tighten matching rules.
+
+## 21. Analytics → Location Insights Shows "No geographic data available"
+**Symptoms**: The Analytics page shows an empty location card even though the emails mention cities or work modes.
+- **Cause**: The tracker only persisted a flat `location` string, and the SQL view filtered empty rows instead of falling back to a visible placeholder.
+- **Fix**: Apply migration `012_platform_allowlist_gmail_legacy_and_locations.sql`, redeploy the tracker/dashboard, and let new runs populate `job_location`, `job_city`, `job_country`, and `work_mode`. The `location_breakdown` view now falls back to `Location not specified` per row.
+- **Prevention**: Keep structured location fields in the classifier schema and update the analytics view whenever application-location storage changes.

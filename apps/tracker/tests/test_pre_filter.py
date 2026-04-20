@@ -61,3 +61,45 @@ def test_exclude_filter_blocks_matching_emails():
     filtered, stats = apply_user_filters(client, "test-user-id", emails)
     assert any(e.email_id == "2" for e in filtered)
     assert stats.filtered >= 1
+
+
+def test_platform_allowlist_bypasses_include_and_exclude_filters():
+    client = _make_mock_client(filters=[
+        {
+            "filter_type": "INCLUDE",
+            "field": "subject",
+            "pattern": "interview",
+            "is_active": True,
+            "priority": 1,
+        },
+        {
+            "filter_type": "EXCLUDE",
+            "field": "sender",
+            "pattern": "linkedin.com",
+            "is_active": True,
+            "priority": 10,
+        },
+        {
+            "filter_type": "platform_allowlist",
+            "field": "sender",
+            "pattern": "jobs-noreply@linkedin.com",
+            "is_active": True,
+            "priority": -100,
+        },
+    ])
+    emails = [
+        EmailMetadata(
+            email_id="1",
+            thread_id="t1",
+            sender="jobs-noreply@linkedin.com",
+            sender_email="jobs-noreply@linkedin.com",
+            subject="Your application was sent to Example GmbH",
+            body="...",
+            date=date(2026, 4, 11),
+        )
+    ]
+
+    filtered, stats = apply_user_filters(client, "test-user-id", emails)
+
+    assert len(filtered) == 1
+    assert stats.filtered == 0

@@ -88,7 +88,7 @@ def run_pipeline_multiuser(
     matcher = ApplicationMatcher(
         company_threshold=0.85,
         job_threshold=0.75,
-        composite_threshold=0.80,
+        composite_threshold=0.72,
     )
 
     try:
@@ -204,7 +204,7 @@ def run_pipeline_multiuser(
 
         # ── Consolidated Telegram report ──────────────────────
         if user.get("telegram_enabled") and persistence_stats.report is not None:
-            notification_sent = _send_consolidated_report(
+            notification_sent, telegram_error = _send_consolidated_report(
                 user=user,
                 report=persistence_stats.report,
                 run_label=run_id,
@@ -213,6 +213,26 @@ def run_pipeline_multiuser(
             )
             persistence_stats.notifications_sent = 1 if notification_sent else 0
             persistence_stats.notifications_failed = 0 if notification_sent else 1
+            persistence_stats.telegram_error = telegram_error
+            if telegram_error:
+                persistence_stats.report.error_messages.append(f"Telegram: {telegram_error}")
+
+        stats.update(
+            {
+                "emails_processed": ingestion_stats.total_after_filters,
+                "gmail_api_calls": ingestion_stats.gmail_api_calls,
+                "gmail_remaining_quota_estimate": ingestion_stats.gmail_remaining_quota_estimate or 0,
+                "ai_requests": analysis_stats.ai_requests,
+                "ai_input_tokens_est": analysis_stats.ai_input_tokens_est,
+                "ai_output_tokens_est": analysis_stats.ai_output_tokens_est,
+                "ai_estimated_cost_usd": analysis_stats.ai_estimated_cost_usd,
+                "telegram_notifications_sent": persistence_stats.notifications_sent,
+                "telegram_notifications_failed": persistence_stats.notifications_failed,
+                "telegram_failed": bool(persistence_stats.notifications_failed),
+            }
+        )
+        if persistence_stats.telegram_error:
+            stats["telegram_error"] = persistence_stats.telegram_error
 
         record_usage_metrics(
             client,
@@ -230,7 +250,9 @@ def run_pipeline_multiuser(
             telegram_notifications_failed=persistence_stats.notifications_failed,
             success_count=persistence_stats.added + persistence_stats.updated,
             failure_count=persistence_stats.errors,
-            error_categories=categorize_errors(persistence_stats.report.error_messages if persistence_stats.report else []),
+            error_categories=categorize_errors(
+                persistence_stats.report.error_messages if persistence_stats.report else []
+            ),
             sync_status="complete",
         )
 
@@ -777,7 +799,7 @@ def _send_consolidated_report(
     run_label: str,
     user_email: str,
     duration_seconds: float,
-) -> bool:
+) -> tuple[bool, str | None]:
     """Send a single consolidated Telegram report at end of pipeline run."""
     report.run_label = run_label
     report.user_email = user_email
@@ -789,4 +811,4 @@ def _send_consolidated_report(
         return send_run_report_for_user(user, report)
     except Exception as error:
         logger.bind(error=str(error)).error("Failed to send consolidated Telegram report")
-        return False
+        return False, str(error)

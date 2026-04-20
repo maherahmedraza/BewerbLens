@@ -52,6 +52,7 @@ psql "$DATABASE_URL" -f db/migrations/008_fix_pipeline_runs_constraints.sql
 psql "$DATABASE_URL" -f db/migrations/009_reset_for_reprocessing.sql
 psql "$DATABASE_URL" -f db/migrations/010_sync_integrations_analytics.sql
 psql "$DATABASE_URL" -f db/migrations/011_fix_admin_role_policy_function.sql
+psql "$DATABASE_URL" -f db/migrations/012_platform_allowlist_gmail_legacy_and_locations.sql
 ```
 
 Alternatively, paste each file into the Supabase **SQL Editor** and click **Run**.
@@ -133,8 +134,8 @@ The `next.config.ts` automatically loads environment variables from the root `.e
     | `BATCH_SIZE` | `50` |
     | `MIN_CONFIDENCE` | `0.55` |
     | `GMAIL_DAILY_QUOTA_UNITS` | `1000000000` |
-    | `GEMINI_INPUT_COST_PER_MILLION` | `0.10` |
-    | `GEMINI_OUTPUT_COST_PER_MILLION` | `0.40` |
+     | `GEMINI_INPUT_COST_PER_MILLION` | `0.075` |
+     | `GEMINI_OUTPUT_COST_PER_MILLION` | `0.30` |
 6. Click **Create Resources**.
 
 The app spec is also defined in `.do/app.yaml` for declarative configuration.

@@ -14,6 +14,7 @@ interface SyncSettings {
   supportsSyncSchema: boolean;
   gmail_connected: boolean;
   gmail_connected_at: string | null;
+  gmail_connected_via: "oauth" | "env_fallback" | null;
   backfill_start_date: string | null;
   last_synced_at: string | null;
   sync_mode: SyncMode;
@@ -256,12 +257,24 @@ export default function SettingsPage() {
 
               <div className={styles.helperRow}>
                 <span className={styles.helperText}>
-                  Gmail connected: {gmailConnected ? "Yes" : "No"}
+                  Gmail connected:{" "}
+                  {gmailConnected
+                    ? syncSettings.gmail_connected_via === "env_fallback"
+                      ? "Legacy env fallback"
+                      : "OAuth"
+                    : "No"}
                 </span>
                 <span className={styles.helperText}>
                   Initial start date: {syncSettings.backfill_start_date || "Not set"}
                 </span>
               </div>
+
+              {syncSettings.gmail_connected_via === "env_fallback" ? (
+                <p className={styles.errorText}>
+                  This user is still running on the legacy Gmail environment fallback. Connect Gmail
+                  from the Profile page to switch to stored OAuth credentials.
+                </p>
+              ) : null}
 
               {syncSettings.sync_error ? (
                 <p className={styles.errorText}>{syncSettings.sync_error}</p>

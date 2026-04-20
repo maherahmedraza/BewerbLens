@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  Gemini Classifier — AI email classification                ║
 # ║  Implementation of EmailClassifier using Google Gemini.      ║
@@ -6,8 +8,8 @@
 # ║  batching and optimized prompts.                             ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-import json
 import re
+import json
 import time
 from typing import Any
 
@@ -32,7 +34,7 @@ Return ONLY valid JSON that matches the provided response schema.
 
 TYPES:
 1. "application_confirmation" - Company confirmed receiving YOUR job application (e.g., "Eingangsbestätigung", "vielen Dank für Ihre Bewerbung")
-2. "rejection" - Application was declined (e.g., "Absage", "Leider müssen wir Ihnen heute mitteilen", "nicht weiter berücksichtigen")
+2. "rejection" - Application was declined (e.g., "Absage", "Leider müssen wir Ihnen heute mitteilen", "nicht weiter berücksichtigen", "nicht weiter verfolgen")
 3. "positive_response" - Interview invite, assessment, or offer (e.g., "Einladung zum Vorstellungsgespräch", "nächste Schritte", "Interview")
 4. "not_job_related" - Everything else (job alerts, marketing, internal company news)
 
@@ -40,13 +42,18 @@ EXTRACTION RULES:
 - company_name: The actual HIRING company (e.g., "Körber", "Schwarz Digits").
 - job_title: Exact role title.
 - platform: SmartRecruiters, Personio, Workday, Greenhouse, JOIN, Direct, etc.
+- location: Best single-line job location summary, if present.
+- job_location: Full structured location text from the email, if present.
+- job_city: City only, if present.
+- job_country: Country only, if present.
+- work_mode: One of "Remote", "Hybrid", "On-site", or "Unknown".
 - confidence: 0.0 to 1.0
 
 EMAILS TO CLASSIFY:
 {emails_text}
 
 JSON response format:
-{{"results":[{{"email_index":1,"classification":"...","company_name":"...","job_title":"...","platform":"...","location":"...","job_listing_url":"","salary_range":"","confidence":0.9,"reasoning":"..."}}]}}"""
+{{"results":[{{"email_index":1,"classification":"...","company_name":"...","job_title":"...","platform":"...","location":"...","job_location":"","job_city":"","job_country":"","work_mode":"Unknown","job_listing_url":"","salary_range":"","confidence":0.9,"reasoning":"..."}}]}}"""
 
 
 class GeminiClassifier(EmailClassifier):
@@ -59,6 +66,7 @@ class GeminiClassifier(EmailClassifier):
         self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.gemini_model
         self.max_tokens = settings.classifier_max_batch_tokens
+        self.last_usage = self._empty_usage()
 
     @property
     def provider_name(self) -> str:
@@ -71,6 +79,7 @@ class GeminiClassifier(EmailClassifier):
         if not emails:
             return []
 
+        self.last_usage = self._empty_usage()
         all_results: list[EmailClassification] = []
         batches = self._create_adaptive_batches(emails)
 
@@ -90,7 +99,8 @@ class GeminiClassifier(EmailClassifier):
             prompt = CLASSIFICATION_PROMPT.format(emails_text=emails_text)
 
             try:
-                raw_response = self._call_api(prompt)
+                raw_response, usage = self._call_api(prompt)
+                self._accumulate_usage(usage)
                 results = self._parse_response(raw_response)
 
                 # Mapeo de resultados
@@ -168,7 +178,7 @@ class GeminiClassifier(EmailClassifier):
         wait=wait_exponential(multiplier=2, min=4, max=60),
         reraise=True,
     )
-    def _call_api(self, prompt: str) -> str:
+    def _call_api(self, prompt: str) -> tuple[str, dict[str, float]]:
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
@@ -183,7 +193,61 @@ class GeminiClassifier(EmailClassifier):
                 if part.text:
                     text = part.text
                     break
-        return text or response.text or ""
+        return text or response.text or "", self._extract_usage(response)
+
+    def _empty_usage(self) -> dict[str, float]:
+        return {
+            "ai_requests": 0,
+            "ai_input_tokens_est": 0,
+            "ai_output_tokens_est": 0,
+            "ai_estimated_cost_usd": 0.0,
+        }
+
+    def _accumulate_usage(self, usage: dict[str, float]) -> None:
+        self.last_usage["ai_requests"] += int(usage.get("ai_requests", 0))
+        self.last_usage["ai_input_tokens_est"] += int(usage.get("ai_input_tokens_est", 0))
+        self.last_usage["ai_output_tokens_est"] += int(usage.get("ai_output_tokens_est", 0))
+        self.last_usage["ai_estimated_cost_usd"] = round(
+            float(self.last_usage["ai_estimated_cost_usd"])
+            + float(usage.get("ai_estimated_cost_usd", 0.0)),
+            6,
+        )
+
+    def _extract_usage(self, response: Any) -> dict[str, float]:
+        usage_metadata = getattr(response, "usage_metadata", None)
+        prompt_tokens = self._usage_value(usage_metadata, "prompt_token_count", "promptTokenCount")
+        output_tokens = self._usage_value(
+            usage_metadata,
+            "candidates_token_count",
+            "candidatesTokenCount",
+            "output_token_count",
+            "outputTokenCount",
+        )
+        estimated_cost = (
+            (prompt_tokens / 1_000_000) * settings.gemini_input_cost_per_million
+            + (output_tokens / 1_000_000) * settings.gemini_output_cost_per_million
+        )
+        return {
+            "ai_requests": 1,
+            "ai_input_tokens_est": prompt_tokens,
+            "ai_output_tokens_est": output_tokens,
+            "ai_estimated_cost_usd": round(estimated_cost, 6),
+        }
+
+    def _usage_value(self, usage_metadata: Any, *names: str) -> int:
+        if usage_metadata is None:
+            return 0
+
+        for name in names:
+            value = getattr(usage_metadata, name, None)
+            if value is None and isinstance(usage_metadata, dict):
+                value = usage_metadata.get(name)
+            if value is not None:
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return 0
+        return 0
 
     def _parse_response(self, raw_text: str) -> list[EmailClassification]:
         """Lógica robusta de parseo JSON."""

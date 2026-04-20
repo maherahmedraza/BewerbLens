@@ -14,6 +14,10 @@ export interface Application {
   gmail_link: string;
   job_listing_url: string;
   location: string;
+  job_location: string;
+  job_city: string;
+  job_country: string;
+  work_mode: "Remote" | "Hybrid" | "On-site" | "Unknown";
   salary_range: string;
   source_email_id: string;
   status_history: StatusHistoryEntry[];
@@ -186,7 +190,7 @@ export interface PipelineRun {
   current_phase?: string;
   duration_ms?: number;
   error_message?: string;
-  summary_stats?: Record<string, number>;
+  summary_stats?: Record<string, number | string | boolean>;
 }
 
 export interface PipelineStep {

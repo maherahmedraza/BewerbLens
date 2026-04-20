@@ -11,7 +11,7 @@ import { getOrCreateCompatibleUserProfile } from "@/lib/userProfiles";
 import styles from "./profile.module.css";
 
 type Region = "en" | "de" | "fr" | "es";
-type FilterType = "include" | "exclude";
+type FilterType = "include" | "exclude" | "platform_allowlist";
 type FilterField = "subject" | "sender" | "body";
 
 interface EmailFilter {
@@ -22,6 +22,7 @@ interface EmailFilter {
   is_regex: boolean;
   is_active: boolean;
   priority: number;
+  is_protected: boolean;
 }
 
 interface ProfileState {
@@ -33,6 +34,7 @@ interface ProfileState {
   supportsSyncSchema: boolean;
   gmail_connected: boolean;
   gmail_connected_at: string | null;
+  gmail_connected_via: "oauth" | "env_fallback" | null;
   telegram_connected: boolean;
   telegram_connected_at: string | null;
   telegram_enabled: boolean;
@@ -89,16 +91,36 @@ export default function ProfileSettingsPage() {
   }, [supabase]);
 
   const loadFilters = useCallback(async () => {
-    const { data, error } = await supabase
+    const latest = await supabase
+      .from("email_filters")
+      .select("id, filter_type, field, pattern, is_regex, is_active, priority, is_protected")
+      .order("priority", { ascending: true });
+
+    if (!latest.error) {
+      setFilters((latest.data || []) as EmailFilter[]);
+      return;
+    }
+
+    const message = String(latest.error.message || "").toLowerCase();
+    if (!message.includes("column")) {
+      throw latest.error;
+    }
+
+    const legacy = await supabase
       .from("email_filters")
       .select("id, filter_type, field, pattern, is_regex, is_active, priority")
       .order("priority", { ascending: true });
 
-    if (error) {
-      throw error;
+    if (legacy.error) {
+      throw legacy.error;
     }
 
-    setFilters((data || []) as EmailFilter[]);
+    setFilters(
+      ((legacy.data || []) as Omit<EmailFilter, "is_protected">[]).map((filter) => ({
+        ...filter,
+        is_protected: false,
+      }))
+    );
   }, [supabase]);
 
   useEffect(() => {
@@ -213,6 +235,11 @@ export default function ProfileSettingsPage() {
   }
 
   async function updateFilter(filterId: string, updates: Partial<EmailFilter>) {
+    if (filters.find((filter) => filter.id === filterId)?.is_protected) {
+      setMessage("Protected platform allowlist rules cannot be edited.");
+      return;
+    }
+
     try {
       const { error } = await supabase.from("email_filters").update(updates).eq("id", filterId);
       if (error) {
@@ -228,6 +255,11 @@ export default function ProfileSettingsPage() {
   }
 
   async function deleteFilter(filterId: string) {
+    if (filters.find((filter) => filter.id === filterId)?.is_protected) {
+      setMessage("Protected platform allowlist rules cannot be deleted.");
+      return;
+    }
+
     try {
       const { error } = await supabase.from("email_filters").delete().eq("id", filterId);
       if (error) {
@@ -306,6 +338,12 @@ export default function ProfileSettingsPage() {
 
   const gmailConnected = profile.gmail_connected;
   const telegramConnected = profile.telegram_connected;
+  const gmailStatusLabel =
+    profile.gmail_connected_via === "env_fallback"
+      ? "Connected (legacy mode)"
+      : gmailConnected
+        ? "Connected"
+        : "Not connected";
 
   return (
     <div className={styles.profileContainer}>
@@ -321,6 +359,15 @@ export default function ProfileSettingsPage() {
             This project is still using the pre-sync schema for <code>user_profiles</code>. The
             basic profile works, but sync status, connection timestamps, Telegram linking, and the
             new analytics surface need migration <code>010_sync_integrations_analytics.sql</code>.
+          </p>
+        </div>
+      ) : null}
+
+      {profile.gmail_connected_via === "env_fallback" ? (
+        <div className={styles.noticeCard}>
+          <p className={styles.helpText}>
+            Gmail is currently connected through the legacy environment-token fallback. Connect via
+            OAuth to store credentials per user and keep multi-user sync behavior predictable.
           </p>
         </div>
       ) : null}
@@ -368,14 +415,15 @@ export default function ProfileSettingsPage() {
           <div className={styles.providerHeader}>
             <h3>Gmail</h3>
             <span className={gmailConnected ? styles.statusConnected : styles.statusDisconnected}>
-              {gmailConnected ? "Connected" : "Not connected"}
+              {gmailStatusLabel}
             </span>
           </div>
           <p>Authorize Gmail once. BewerbLens stores the refresh token server-side and keeps sync controls in Settings.</p>
           {profile.supportsSyncSchema ? (
             <p className={styles.helpText}>
-              Connected: {formatDate(profile.gmail_connected_at)} · Sync mode: {profile.sync_mode} ·
-              {" "}Status: {profile.sync_status}
+              Connected: {formatDate(profile.gmail_connected_at)} · Via:{" "}
+              {profile.gmail_connected_via === "env_fallback" ? "legacy environment fallback" : "OAuth"} ·
+              {" "}Sync mode: {profile.sync_mode} · Status: {profile.sync_status}
             </p>
           ) : (
             <p className={styles.helpText}>
@@ -476,21 +524,26 @@ export default function ProfileSettingsPage() {
           {filters.map((filter) => (
             <div key={filter.id} className={styles.filterCard}>
               <div className={styles.filterRow}>
-                <select
-                  value={filter.filter_type}
-                  onChange={(event) =>
-                    void updateFilter(filter.id, { filter_type: event.target.value as FilterType })
-                  }
-                  className={styles.filterType}
-                >
-                  <option value="include">Include</option>
-                  <option value="exclude">Exclude</option>
-                </select>
+                {filter.is_protected ? (
+                  <span className={styles.protectedBadge}>Platform allowlist</span>
+                ) : (
+                  <select
+                    value={filter.filter_type}
+                    onChange={(event) =>
+                      void updateFilter(filter.id, { filter_type: event.target.value as FilterType })
+                    }
+                    className={styles.filterType}
+                  >
+                    <option value="include">Include</option>
+                    <option value="exclude">Exclude</option>
+                  </select>
+                )}
 
                 <span className={styles.filterText}>emails where</span>
 
                 <select
                   value={filter.field}
+                  disabled={filter.is_protected}
                   onChange={(event) =>
                     void updateFilter(filter.id, { field: event.target.value as FilterField })
                   }
@@ -502,32 +555,35 @@ export default function ProfileSettingsPage() {
 
                 <span className={styles.filterText}>contains</span>
 
-                <input
-                  type="text"
-                  value={filter.pattern}
-                  onChange={(event) => void updateFilter(filter.id, { pattern: event.target.value })}
-                  placeholder="e.g. application, bewerbung"
-                  className={styles.filterPattern}
+                  <input
+                    type="text"
+                    value={filter.pattern}
+                    disabled={filter.is_protected}
+                    onChange={(event) => void updateFilter(filter.id, { pattern: event.target.value })}
+                    placeholder="e.g. application, bewerbung"
+                    className={styles.filterPattern}
                 />
 
                 <label className={styles.checkboxLabel}>
-                  <input
-                    type="checkbox"
-                    checked={filter.is_regex}
-                    onChange={(event) =>
-                      void updateFilter(filter.id, { is_regex: event.target.checked })
-                    }
+                    <input
+                      type="checkbox"
+                      checked={filter.is_regex}
+                      disabled={filter.is_protected}
+                      onChange={(event) =>
+                        void updateFilter(filter.id, { is_regex: event.target.checked })
+                      }
                   />
                   Regex
                 </label>
 
                 <label className={styles.checkboxLabel}>
-                  <input
-                    type="checkbox"
-                    checked={filter.is_active}
-                    onChange={(event) =>
-                      void updateFilter(filter.id, { is_active: event.target.checked })
-                    }
+                    <input
+                      type="checkbox"
+                      checked={filter.is_active}
+                      disabled={filter.is_protected}
+                      onChange={(event) =>
+                        void updateFilter(filter.id, { is_active: event.target.checked })
+                      }
                   />
                   Active
                 </label>
@@ -535,11 +591,18 @@ export default function ProfileSettingsPage() {
                 <button
                   onClick={() => void deleteFilter(filter.id)}
                   className={styles.btnIconDanger}
+                  disabled={filter.is_protected}
                   title="Delete filter"
                 >
                   <TrashIcon className={styles.icon} />
                 </button>
               </div>
+              {filter.is_protected ? (
+                <p className={styles.helpText}>
+                  Protected allowlist rules always run before your exclude filters so job-platform
+                  confirmation emails do not get filtered out.
+                </p>
+              ) : null}
             </div>
           ))}
         </div>

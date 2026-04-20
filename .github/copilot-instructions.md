@@ -14,7 +14,7 @@ BewerbLens/
 ├── apps/orchestrator/   # FastAPI control plane — REST API + APScheduler + worker thread
 ├── apps/tracker/        # Python AI pipeline — ingestion → analysis → persistence
 ├── apps/dashboard/      # Next.js 16 App Router frontend
-├── db/migrations/       # Idempotent SQL files; run in numeric order (001 → 005)
+├── db/migrations/       # Idempotent SQL files; run in numeric order (001 → latest)
 ├── .github/workflows/   # CI (ci.yml), deploy-frontend (deploy.yml), deploy-backend (deploy-backend.yml), cron (pipeline-trigger.yml)
 ├── .do/app.yaml         # DigitalOcean App Platform declarative spec
 ├── Dockerfile           # Root-level; builds orchestrator + tracker into one image
@@ -84,6 +84,13 @@ psql "$DATABASE_URL" -f db/migrations/002_hotfix_rls_policies.sql
 psql "$DATABASE_URL" -f db/migrations/003_views_and_rls.sql
 psql "$DATABASE_URL" -f db/migrations/004_application_stats_view.sql
 psql "$DATABASE_URL" -f db/migrations/005_enable_realtime.sql
+psql "$DATABASE_URL" -f db/migrations/006_fix_status_enum_strings.sql
+psql "$DATABASE_URL" -f db/migrations/007_remove_thread_id_unique.sql
+psql "$DATABASE_URL" -f db/migrations/008_fix_pipeline_runs_constraints.sql
+psql "$DATABASE_URL" -f db/migrations/009_reset_for_reprocessing.sql
+psql "$DATABASE_URL" -f db/migrations/010_sync_integrations_analytics.sql
+psql "$DATABASE_URL" -f db/migrations/011_fix_admin_role_policy_function.sql
+psql "$DATABASE_URL" -f db/migrations/012_platform_allowlist_gmail_legacy_and_locations.sql
 ```
 
 ---
@@ -258,6 +265,22 @@ A record at `Offer` or `Rejected` can **never** be overwritten by any lower-prio
 ### 6.5 Fuzzy Matching — Application Deduplication
 
 `ApplicationMatcher` in `fuzzy_matcher.py` uses composite similarity on `(company_name, job_title)`. The same company + same job title = update the existing record. The same company + different job title = new record. Do not bypass this with exact-string matching; company names differ across email senders and job portals.
+
+### 6.6 Platform Allowlist Comes Before User Filters
+
+Known job-platform sender addresses (`jobs-noreply@linkedin.com`, `noreply@xing.com`, `no-reply@stepstone.de`, `noreply@indeed.com`, `noreply@glassdoor.com`) must be modeled as protected `platform_allowlist` rows and evaluated before any include/exclude rule. Never let ordinary user filters block those senders.
+
+### 6.7 Gemini Usage Must Be Persisted
+
+Any classifier implementation must populate `last_usage` with `ai_requests`, input tokens, output tokens, and estimated cost. The tracker writes those values to both `usage_metrics` and `pipeline_runs.summary_stats`; do not return classifications without updating usage.
+
+### 6.8 Gmail Legacy Fallback Must Be Explicit
+
+If the tracker falls back to `GMAIL_TOKEN_JSON`, it must set `user_profiles.gmail_connected_via = 'env_fallback'`. Dashboard code must treat that as connected and show a legacy-mode warning instead of "Not connected".
+
+### 6.9 Google OAuth Route Handlers
+
+`/api/integrations/google/start` and `/api/integrations/google/callback` must stay on the Node.js runtime, validate `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_OAUTH_REDIRECT_URI`, and protect the callback with a signed state value. Do not allow uncaught OAuth exceptions to surface as raw 500 responses.
 
 ### 6.6 Telegram Notifications Are Consolidated
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -28,8 +30,8 @@ class Settings(BaseSettings):
     # ── Gemini AI ──────────────────────────────────────────
     gemini_api_key: str = Field(default="")
     gemini_model: str = Field(default="gemini-3.1-flash-lite-preview")
-    gemini_input_cost_per_million: float = Field(default=0.10, ge=0.0)
-    gemini_output_cost_per_million: float = Field(default=0.40, ge=0.0)
+    gemini_input_cost_per_million: float = Field(default=0.075, ge=0.0)
+    gemini_output_cost_per_million: float = Field(default=0.30, ge=0.0)
 
     # ── Supabase ───────────────────────────────────────────
     supabase_url: str = Field(default="")

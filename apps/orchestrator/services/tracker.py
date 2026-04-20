@@ -151,7 +151,7 @@ class TrackerService:
             users = (
                 client.table("user_profiles")
                 .select("id")
-                .not_.is_("gmail_credentials", "null")
+                .or_("gmail_credentials.not.is.null,gmail_connected_via.eq.env_fallback")
                 .eq("sync_mode", SyncMode.INCREMENTAL.value)
                 .execute()
             )

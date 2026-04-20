@@ -6,23 +6,24 @@
 # ║  v2.0: Uses BatchHttpRequest for 5x faster fetching.        ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-import os
-import json
 import base64
 import hashlib
+import json
+import os
+from datetime import date, datetime, timezone
+from itertools import islice
 import re
 import pickle
 from collections.abc import Callable
-from datetime import date, datetime
-from itertools import islice
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
+
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.fernet import Fernet
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from loguru import logger
-from cryptography.fernet import Fernet
 
 from config import settings
 from models import EmailMetadata
@@ -130,6 +131,28 @@ def _decrypt_data(encrypted_str: str) -> dict:
             return {}
 
 
+def _update_gmail_connection_state(
+    client,
+    user_id: str | None,
+    connected_via: str,
+    *,
+    set_connected_at: bool = False,
+) -> None:
+    if not client or not user_id:
+        return
+
+    payload: dict[str, Any] = {
+        "gmail_connected_via": connected_via,
+    }
+    if set_connected_at:
+        payload["gmail_connected_at"] = datetime.now(timezone.utc).isoformat()
+
+    try:
+        client.table("user_profiles").update(payload).eq("id", user_id).execute()
+    except Exception as error:
+        logger.warning(f"Failed to persist Gmail connection state for user {user_id}: {error}")
+
+
 def get_gmail_service_for_user(user_profile: Dict, db_client=None):
     """
     Get Gmail service for specific user.
@@ -159,6 +182,7 @@ def get_gmail_service_for_user(user_profile: Dict, db_client=None):
                 creds_data = _decrypt_data(creds_data)
 
             creds = _load_credentials_from_json(creds_data, client=db_client, user_id=user_id)
+            _update_gmail_connection_state(db_client, user_id, "oauth")
             return build('gmail', 'v1', credentials=creds)
         except Exception as e:
             logger.error(f"Failed to load database credentials: {e}")
@@ -180,6 +204,7 @@ def get_gmail_service_for_user(user_profile: Dict, db_client=None):
                 raise ValueError("GMAIL_TOKEN_JSON is neither JSON nor a valid file path")
 
             creds = _load_credentials_from_json(token_data, client=db_client, user_id=user_id)
+            _update_gmail_connection_state(db_client, user_id, "env_fallback", set_connected_at=True)
             return build('gmail', 'v1', credentials=creds)
         except Exception as e:
             logger.error(f"Failed to load env credentials: {e}")
@@ -278,7 +303,9 @@ def save_gmail_credentials_to_db(client, user_id: str, credentials: Credentials)
     encrypted_creds = _encrypt_data(creds_dict)
 
     client.table("user_profiles").update({
-        "gmail_credentials": encrypted_creds
+        "gmail_credentials": encrypted_creds,
+        "gmail_connected_via": "oauth",
+        "gmail_connected_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", user_id).execute()
 
     logger.success(f"Saved Gmail credentials for user {user_id}")

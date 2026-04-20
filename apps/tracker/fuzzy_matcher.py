@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  FIXED Fuzzy Matcher — Strict Job Title Matching            ║
 # ║                                                             ║
@@ -10,10 +12,13 @@
 # ║  Thread_id is unreliable (Gmail threads by sender)         ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-from typing import Optional, List, Dict
 from difflib import SequenceMatcher
+import re
+from typing import Dict, List, Optional
+
 from loguru import logger
-from models import CLASSIFICATION_TO_STATUS
+
+from models import CLASSIFICATION_TO_STATUS, STATUS_PRIORITY
 
 
 class ApplicationMatcher:
@@ -29,7 +34,10 @@ class ApplicationMatcher:
         self,
         company_threshold: float = 0.85,
         job_threshold: float = 0.75,  # Stricter for job titles
-        composite_threshold: float = 0.80  # Both must be high
+        # 0.72 still prevents unrelated jobs from colliding, but it keeps
+        # common ATS suffixes like "(3228)" and descriptive shift/location
+        # tails from creating duplicate application rows.
+        composite_threshold: float = 0.72,
     ):
         self.company_threshold = company_threshold
         self.job_threshold = job_threshold
@@ -304,11 +312,15 @@ class ApplicationMatcher:
         seniority = ['senior', 'junior', 'lead', 'principal', 'staff']
         words = title_lower.split()
         words = [w for w in words if w not in seniority]
-        
+
         # Remove German gender markers
         title_lower = ' '.join(words)
         title_lower = title_lower.replace('(m/w/d)', '').replace('m/w/d', '')
-        
+        title_lower = re.sub(r'\(\d+\)', '', title_lower)
+        title_lower = re.sub(r'\bbereich\b.*$', '', title_lower)
+        title_lower = re.sub(r'\bfür\b.*$', '', title_lower)
+        title_lower = re.sub(r'[-_/,:]+', ' ', title_lower)
+
         return ' '.join(title_lower.split())
     
     def _similarity(self, a: str, b: str) -> float:
@@ -341,6 +353,8 @@ def upsert_application_fixed(
         apps_cache=apps_cache
     )
     
+    location_updates = _build_location_updates(classification, existing_app)
+
     if existing_app:
         # ═══ UPDATE: Same job, append to history ═══
         display_status = CLASSIFICATION_TO_STATUS.get(classification.classification)
@@ -378,21 +392,9 @@ def upsert_application_fixed(
         
         current_history.append(status_update)
         
-        # ═══ New Logic: Calculate Correct Current Status ═══
-        # 1. Sort history by timestamp (date)
-        try:
-            current_history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-        except Exception:
-            pass # Keep original order if sorting fails
-            
-        # 2. Derive the current status from the most recent entries
-        # We look at the latest entry, but we also respect STATUS_PRIORITY 
-        # (e.g., if multiple updates happen on the same day, Rejected beats Applied)
-        from models import Status
-        
-        latest_entry = current_history[0]
-        calculated_status = latest_entry.get('status', status_value)
-        
+        latest_entry = current_history[-1]
+        calculated_status = _resolve_current_status(existing_app.get("status"), status_value)
+
         # Update application
         client.table("applications").update({
             "status": calculated_status,
@@ -400,7 +402,8 @@ def upsert_application_fixed(
             "email_count": len(current_history),
             "last_updated": "now()",
             "email_subject": latest_entry.get('email_subject') or email.subject,
-            "source_email_id": latest_entry.get('source_email_id') or email.email_id
+            "source_email_id": latest_entry.get('source_email_id') or email.email_id,
+            **location_updates,
         }).eq("id", existing_app['id']).execute()
         
         logger.info(
@@ -438,6 +441,7 @@ def upsert_application_fixed(
                 "email_from": email.sender_email,
                 "date_applied": str(email.date),
                 "gmail_link": email.gmail_link,
+                **location_updates,
                 "source_email_id": email.email_id,
                 "status_history": [initial_status],
                 "email_count": 1,
@@ -464,6 +468,7 @@ def upsert_application_fixed(
                     "email_from": email.sender_email,
                     "date_applied": str(email.date),
                     "gmail_link": email.gmail_link,
+                    **location_updates,
                     "source_email_id": email.email_id,
                     "status_history": [initial_status],
                     "email_count": 1,
@@ -476,6 +481,38 @@ def upsert_application_fixed(
             f"✓ ADDED: {classification.company_name} / {classification.job_title}"
         )
         return "added"
+
+
+def _resolve_current_status(current_status: str | None, new_status: str) -> str:
+    if not current_status:
+        return new_status
+
+    current_priority = _status_priority(current_status)
+    new_priority = _status_priority(new_status)
+    return new_status if new_priority > current_priority else current_status
+
+
+def _build_location_updates(classification, existing_app: Dict | None = None) -> Dict[str, str]:
+    current = existing_app or {}
+    job_location = classification.job_location or classification.location or current.get("job_location") or current.get("location") or ""
+    job_city = classification.job_city or current.get("job_city") or ""
+    job_country = classification.job_country or current.get("job_country") or ""
+    work_mode = classification.work_mode or current.get("work_mode") or "Unknown"
+
+    return {
+        "location": classification.location or current.get("location") or job_location,
+        "job_location": job_location,
+        "job_city": job_city,
+        "job_country": job_country,
+        "work_mode": work_mode if work_mode in {"Remote", "Hybrid", "On-site", "Unknown"} else "Unknown",
+    }
+
+
+def _status_priority(status: str) -> int:
+    for enum_status, priority in STATUS_PRIORITY.items():
+        if getattr(enum_status, "value", enum_status) == status:
+            return priority
+    return 0
 
 
 # ══════════════════════════════════════════════════════════════

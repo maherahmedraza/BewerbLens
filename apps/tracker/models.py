@@ -4,6 +4,8 @@
 # ║  action parameter in telegram_notifier.py)                  ║
 # ╚══════════════════════════════════════════════════════════════╝
 
+from __future__ import annotations
+
 from datetime import date as DateType, datetime
 from enum import Enum
 from typing import Optional
@@ -89,6 +91,10 @@ class EmailClassification(BaseModel):
     job_title: str = Field(default="Not Specified")
     platform: str = Field(default="Direct")
     location: str = Field(default="")
+    job_location: str = Field(default="")
+    job_city: str = Field(default="")
+    job_country: str = Field(default="")
+    work_mode: str = Field(default="Unknown")
     job_listing_url: str = Field(default="")
     salary_range: str = Field(default="")
     confidence: float = Field(ge=0.0, le=1.0)
@@ -127,6 +133,7 @@ class PersistenceStageStats(BaseModel):
     errors: int = 0
     notifications_sent: int = 0
     notifications_failed: int = 0
+    telegram_error: str | None = None
     report: Optional["PipelineRunReport"] = Field(default=None, exclude=True)
 
 
@@ -174,6 +181,10 @@ class ApplicationRecord(BaseModel):
     gmail_link: str = ""
     job_listing_url: str = ""
     location: str = ""
+    job_location: str = ""
+    job_city: str = ""
+    job_country: str = ""
+    work_mode: str = "Unknown"
     salary_range: str = ""
     source_email_id: str = ""
     status_history: list[dict] = Field(default_factory=list)

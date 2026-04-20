@@ -58,7 +58,10 @@ async function getLocations(): Promise<LocationBreakdown[]> {
     .from("location_breakdown")
     .select("*")
     .limit(10);
-  return (data as LocationBreakdown[]) || [];
+  return ((data as LocationBreakdown[]) || []).map((row) => ({
+    ...row,
+    location: row.location || "Location not specified",
+  }));
 }
 
 export default async function AnalyticsPage() {
