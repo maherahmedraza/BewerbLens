@@ -34,7 +34,7 @@
     "@types/react-dom": "^19",
     "@types/react-virtualized-auto-sizer": "^1.0.4",
     "@types/react-window": "^1.8.8",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-config-next": "16.2.2",
     "typescript": "^5"
   }
