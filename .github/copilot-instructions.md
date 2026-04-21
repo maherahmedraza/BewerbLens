@@ -218,7 +218,18 @@ USING (
 
 **Never** create a policy with `USING (true)` or skip RLS on a user-data table. **Never** add a view that aggregates across `user_id` without filtering to the authenticated user.
 
-### 5.3 Credentials Are Never Hardcoded
+### 5.3 Avoid RLS Recursion
+Avoid defining RLS policies that call functions which in turn query the same table or call other policies. This causes infinite recursion. Instead:
+- Use `SECURITY DEFINER` functions for role checks.
+- Set the `search_path` to `public, auth` in those functions.
+- Ensure the function itself is not governed by the policy it's helping to enforce.
+
+### 5.4 SQL View Grouping Constraints
+When creating views with `GROUP BY` that use `COALESCE` or other expressions for column normalization:
+- Always group by the **entire expression** (e.g., `GROUP BY COALESCE(col, 'fallback')`) rather than just the column name.
+- Avoid using column aliases in the `GROUP BY` clause if they conflict with base table column names.
+
+### 5.5 Credentials Are Never Hardcoded
 
 - Per-user Gmail tokens and Telegram `chat_id` live in `user_profiles`, encrypted at rest with a Fernet key (`ENCRYPTION_KEY` env var).
 - Dashboard public env vars (`NEXT_PUBLIC_*`) are set on Vercel — not in source code.
@@ -237,9 +248,11 @@ USING (
 
 The pipeline always runs `ingestion → analysis → persistence` in this order. Stages can be individually re-run or resumed, but order is immutable. Do not create shortcuts that skip stages.
 
-### 6.2 Checkpointing Is Incremental
-
-Ingestion fetches only emails since the last successful checkpoint (`get_last_checkpoint`). It also recovers previously unprocessed emails (`is_processed = false` in `raw_emails`). Do not add full-inbox scans unless explicitly implementing a backfill feature.
+### 6.2 Checkpointing & Ingestion Consistency
+- **Ingestion fetches only emails since the last successful checkpoint** (`get_last_checkpoint`).
+- **Recovery mode**: It also recovers previously unprocessed emails (`is_processed = false` in `raw_emails`).
+- **Persistence Mandate**: ALL fetched emails must be inserted into `raw_emails` immediately upon ingestion, regardless of whether they pass the user filters. This prevents the "Infinite Fetch Loop" where the pipeline re-downloads the same spam/newsletter emails every run because they were never remembered as "processed".
+- **No `is:unread`**: Never add `is:unread` to the Gmail search query in production incremental syncs. Deduplication is handled by the `raw_emails` table. Using `is:unread` causes emails to be lost forever if the user reads them on another device before the pipeline runs.
 
 ### 6.3 Classification-to-Status Mapping
 
@@ -262,9 +275,9 @@ Offer (100) > Rejected (99) > Interview > Applied
 
 A record at `Offer` or `Rejected` can **never** be overwritten by any lower-priority classification from a later email. This is intentional — a rejection email arriving after an offer must not reset the status.
 
-### 6.5 Fuzzy Matching — Application Deduplication
-
-`ApplicationMatcher` in `fuzzy_matcher.py` uses composite similarity on `(company_name, job_title)`. The same company + same job title = update the existing record. The same company + different job title = new record. Do not bypass this with exact-string matching; company names differ across email senders and job portals.
+`ApplicationMatcher` in `fuzzy_matcher.py` uses composite similarity on `(company_name, job_title)`. 
+- **Tolerance**: The `company_threshold` must be set to `0.70` (not 0.85). This handles variants like "Company" vs "Company GmbH" or "Company & Co.".
+- **Logic**: The same company + same job title = update the existing record. The same company + different job title = new record. Do not bypass this with exact-string matching; company names differ across email senders and job portals.
 
 ### 6.6 Platform Allowlist Comes Before User Filters
 
@@ -461,3 +474,9 @@ These are the most common mistakes to avoid. Each one has caused a real bug or a
 | In-memory state sharing between pipeline stages | Persist all stage output in `pipeline_run_steps.stats` |
 | Calling tracker code directly from the dashboard | All write operations go through the orchestrator REST API |
 | Hard-coding `pipeline_config` ID as a string literal more than once | The ID is `00000000-0000-0000-0000-000000000001`; define it once as a constant |
+| Using `is:unread` in Gmail incremental queries | Rely on `raw_emails` deduplication; never use `is:unread` |
+| Filtering emails *before* saving them to `raw_emails` | Always save fetched emails to `raw_emails` before filtering |
+| Defining RLS policies that call each other | Use `SECURITY DEFINER` functions to avoid recursion |
+| Using `secrets: inherit` in `on: workflow_call` definitions | Use `secrets: inherit` only when *calling* a workflow |
+| Setting `company_threshold > 0.70` in `ApplicationMatcher` | Keep it at 0.70 to handle "GmbH" and "& Co." variants |
+| Grouping by column name in SQL when using `COALESCE` | Group by the full `COALESCE(...)` expression |
