@@ -86,9 +86,9 @@ def run_pipeline_multiuser(
         raise
 
     matcher = ApplicationMatcher(
-        company_threshold=0.85,
-        job_threshold=0.75,
-        composite_threshold=0.72,
+        company_threshold=0.70,
+        job_threshold=0.65,
+        composite_threshold=0.68,
     )
 
     try:
@@ -336,7 +336,7 @@ def _run_ingestion_stage(
         user_id=user_id,
         since_date=since_date,
         existing_ids=existing_ids_snapshot,
-        only_unread=sync_mode == SyncMode.INCREMENTAL.value,
+        only_unread=False,  # Fixed: always fetch read/unread to avoid missing opened emails
     )
     fetched_count = len(new_emails)
     log_to_db(client, internal_id, "INFO", f"Fetched {fetched_count} new emails", PipelineStage.INGESTION.value)
@@ -378,6 +378,24 @@ def _run_ingestion_stage(
     # recovery emails as processed (prevents them from re-appearing every run)
     all_email_ids_before_filter = [email.email_id for email in new_emails]
 
+    # FIX: Insert all fetched emails into the database FIRST
+    # If they are filtered out later, they will be marked as processed.
+    # Otherwise, they would never be stored, causing an infinite fetch loop.
+    for index, email in enumerate(new_emails):
+        _ensure_run_not_cancelled(client, internal_id)
+        insert_raw_email_with_user(client, user_id, email)
+        if index % 10 == 0:
+            progress = int((index / max(len(new_emails), 1)) * 50)  # first half of progress
+            update_pipeline_step(
+                client,
+                run_id,
+                PipelineStage.INGESTION.value,
+                "running",
+                progress=progress,
+                message=f"Stored {index + 1}/{len(new_emails)} emails",
+            )
+
+    # Now apply user filters
     new_emails, filter_stats = apply_user_filters(client, user_id, new_emails)
     log_to_db(
         client,
@@ -399,20 +417,6 @@ def _run_ingestion_stage(
                 "INFO",
                 f"Marked {len(filtered_out_ids)} filtered-out emails as processed",
                 PipelineStage.INGESTION.value,
-            )
-
-    for index, email in enumerate(new_emails):
-        _ensure_run_not_cancelled(client, internal_id)
-        insert_raw_email_with_user(client, user_id, email)
-        if index % 10 == 0:
-            progress = int((index / max(len(new_emails), 1)) * 100)
-            update_pipeline_step(
-                client,
-                run_id,
-                PipelineStage.INGESTION.value,
-                "running",
-                progress=progress,
-                message=f"Stored {index + 1}/{len(new_emails)} emails",
             )
 
     stage_stats = IngestionStageStats(
@@ -537,6 +541,13 @@ def _run_persistence_stage(
 
         if classification.classification == Classification.NOT_JOB_RELATED:
             stage_stats.skipped += 1
+            log_to_db(
+                client,
+                internal_id,
+                "INFO",
+                f"Skipped NOT_JOB_RELATED email: {email.subject}",
+                PipelineStage.PERSISTENCE.value,
+            )
             continue
 
         try:
