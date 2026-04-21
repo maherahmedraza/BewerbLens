@@ -36,9 +36,12 @@ class SupabaseLogHandler:
 
             # Extraemos el nivel [INFO], [ERROR], etc.
             level = "INFO"
-            if "ERROR" in message: level = "ERROR"
-            elif "WARNING" in message: level = "WARNING"
-            elif "DEBUG" in message: level = "DEBUG"
+            if "ERROR" in message:
+                level = "ERROR"
+            elif "WARNING" in message:
+                level = "WARNING"
+            elif "DEBUG" in message:
+                level = "DEBUG"
 
             supabase.table("pipeline_run_logs").insert({
                 "run_id": self.run_id,

@@ -5,14 +5,15 @@
 # ╚══════════════════════════════════════════════════════════════╝
 
 from typing import Protocol, runtime_checkable
-from models import EmailMetadata, EmailClassification
+
+from models import EmailClassification, EmailMetadata
 
 
 @runtime_checkable
 class EmailClassifier(Protocol):
     """
     Protocolo que define la interfaz para clasificadores de email.
-    Permite intercambiar proveedores de IA (Gemini, OpenAI, etc) sin 
+    Permite intercambiar proveedores de IA (Gemini, OpenAI, etc) sin
     modificar la lógica de la pipeline.
     """
 

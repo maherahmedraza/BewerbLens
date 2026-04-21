@@ -7,11 +7,10 @@
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from loguru import logger
-
-from services.supabase_client import supabase, get_client
-from services.tracker import tracker_service
 from failure_handler import HeartbeatMonitor
+from loguru import logger
+from services.supabase_client import get_client, supabase
+from services.tracker import tracker_service
 
 # UUID fijo de la fila singleton en pipeline_config
 SINGLETON_ID = "00000000-0000-0000-0000-000000000001"

@@ -1,9 +1,8 @@
-import pytest
+from datetime import date
 from unittest.mock import MagicMock
+
 from models import EmailMetadata
 from pre_filter import apply_user_filters
-
-from datetime import date
 
 
 def _make_mock_client(filters=None):
@@ -11,7 +10,14 @@ def _make_mock_client(filters=None):
     client = MagicMock()
     mock_result = MagicMock()
     mock_result.data = filters or []
-    client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = mock_result
+    (
+        client.table.return_value
+        .select.return_value
+        .eq.return_value
+        .eq.return_value
+        .order.return_value
+        .execute.return_value
+    ) = mock_result
     return client
 
 

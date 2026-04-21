@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  Gemini Classifier — AI email classification                ║
 # ║  Implementation of EmailClassifier using Google Gemini.      ║
@@ -7,9 +9,7 @@ from __future__ import annotations
 # ║  v3.0: Refactored into a class, uses adaptive token-based   ║
 # ║  batching and optimized prompts.                             ║
 # ╚══════════════════════════════════════════════════════════════╝
-
 import re
-import json
 import time
 from typing import Any
 
@@ -18,6 +18,7 @@ from loguru import logger
 from pydantic import ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from classifier_base import EmailClassifier
 from config import settings
 from models import (
     Classification,
@@ -25,7 +26,6 @@ from models import (
     EmailMetadata,
     GeminiBatchResponse,
 )
-from classifier_base import EmailClassifier
 
 # System prompt — optimized for performance and structure
 CLASSIFICATION_PROMPT = """You are an expert job application email classifier for a German-based job seeker.
@@ -33,9 +33,12 @@ Classify each email into exactly one of 4 types. The emails may be in English or
 Return ONLY valid JSON that matches the provided response schema.
 
 TYPES:
-1. "application_confirmation" - Company confirmed receiving YOUR job application (e.g., "Eingangsbestätigung", "vielen Dank für Ihre Bewerbung")
-2. "rejection" - Application was declined (e.g., "Absage", "Leider müssen wir Ihnen heute mitteilen", "nicht weiter berücksichtigen", "nicht weiter verfolgen")
-3. "positive_response" - Interview invite, assessment, or offer (e.g., "Einladung zum Vorstellungsgespräch", "nächste Schritte", "Interview")
+1. "application_confirmation" - Company confirmed receiving YOUR job application
+   (e.g., "Eingangsbestätigung", "vielen Dank für Ihre Bewerbung")
+2. "rejection" - Application was declined
+   (e.g., "Absage", "Leider müssen wir Ihnen heute mitteilen", "nicht weiter berücksichtigen", "nicht weiter verfolgen")
+3. "positive_response" - Interview invite, assessment, or offer
+   (e.g., "Einladung zum Vorstellungsgespräch", "nächste Schritte", "Interview")
 4. "not_job_related" - Everything else (job alerts, marketing, internal company news)
 
 EXTRACTION RULES:
@@ -105,7 +108,7 @@ class GeminiClassifier(EmailClassifier):
 
                 # Mapeo de resultados
                 result_map = {r.email_index - 1: r for r in results if 0 <= r.email_index - 1 < len(batch)}
-                
+
                 # Rellenar huecos si falló alguna clasificación individual
                 for i in range(len(batch)):
                     if i in result_map:
@@ -116,9 +119,9 @@ class GeminiClassifier(EmailClassifier):
             except Exception as e:
                 err_msg = str(e)
                 if "API key expired" in err_msg or "API_KEY_INVALID" in err_msg:
-                    logger.critical(f"CRITICAL: Gemini API Key is invalid or expired. Pipeline aborted.")
+                    logger.critical("CRITICAL: Gemini API Key is invalid or expired. Pipeline aborted.")
                     raise RuntimeError("Gemini API Key expired. Please update GEMINI_API_KEY in .env.") from e
-                
+
                 logger.error(f"Batch {batch_idx + 1} failed: {e}")
                 for i in range(len(batch)):
                     all_results.append(self._get_error_classification(i + 1, err_msg))
@@ -132,7 +135,7 @@ class GeminiClassifier(EmailClassifier):
         batches = []
         current_batch = []
         current_size = 0
-        
+
         # Factor de conversión conservador: 4 caracteres ~ 1 token
         # max_tokens * 4 = max_chars
         max_chars = self.max_tokens * 4
@@ -149,10 +152,10 @@ class GeminiClassifier(EmailClassifier):
             else:
                 current_batch.append(email)
                 current_size += email_size
-        
+
         if current_batch:
             batches.append(current_batch)
-            
+
         return batches
 
     def _format_email(self, email: EmailMetadata, index: int) -> str:
@@ -254,7 +257,7 @@ class GeminiClassifier(EmailClassifier):
         # Limpieza básica
         cleaned = re.sub(r"```json\s*", "", raw_text)
         cleaned = re.sub(r"```\s*", "", cleaned).strip()
-        
+
         # Robustness: find first '[' or '{' to ignore prefix text
         match = re.search(r"(\[|\{)", cleaned)
         if match:

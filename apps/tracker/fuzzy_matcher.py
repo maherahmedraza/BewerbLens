@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  FIXED Fuzzy Matcher — Strict Job Title Matching            ║
 # ║                                                             ║
@@ -11,9 +13,7 @@ from __future__ import annotations
 # ║  Strategy: Match on company_name + job_title BOTH high     ║
 # ║  Thread_id is unreliable (Gmail threads by sender)         ║
 # ╚══════════════════════════════════════════════════════════════╝
-
 from difflib import SequenceMatcher
-import re
 from typing import Dict, List, Optional
 
 from loguru import logger
@@ -24,12 +24,12 @@ from models import CLASSIFICATION_TO_STATUS, STATUS_PRIORITY
 class ApplicationMatcher:
     """
     FIXED: Strict matcher that creates separate apps for different job titles.
-    
+
     Key Principle:
     - Same company + DIFFERENT job = SEPARATE applications
     - Same company + SAME job = SINGLE application with history
     """
-    
+
     def __init__(
         self,
         company_threshold: float = 0.85,
@@ -42,7 +42,7 @@ class ApplicationMatcher:
         self.company_threshold = company_threshold
         self.job_threshold = job_threshold
         self.composite_threshold = composite_threshold
-    
+
     def find_existing_application(
         self,
         company_name: str,
@@ -52,71 +52,71 @@ class ApplicationMatcher:
     ) -> Optional[Dict]:
         """
         Find existing application using STRICT matching.
-        
+
         Matching Priority:
         1. Exact company + job match (highest confidence)
         2. Fuzzy company + fuzzy job (BOTH must pass thresholds)
         3. Thread_id hint (only if job titles are similar)
-        
+
         Returns application or None.
         """
-        
+
         # Strategy 1: Exact Match (100% confidence)
         exact_match = self._match_exact(company_name, job_title, apps_cache)
         if exact_match:
             logger.debug(f"✓ Exact match: {exact_match['id']}")
             return exact_match
-        
+
         # Strategy 2: Fuzzy Match (STRICT - both company AND job must match)
         fuzzy_match = self._match_fuzzy_strict(company_name, job_title, apps_cache)
         if fuzzy_match:
             logger.debug(f"✓ Fuzzy match: {fuzzy_match['id']}")
             return fuzzy_match
-        
+
         # Strategy 3: Thread ID (only as weak hint)
         # NOTE: Gmail uses same thread_id for different jobs from same sender!
         # So we MUST verify job_title similarity before trusting thread_id
         thread_match = self._match_thread_with_job_check(
             company_name,
-            job_title, 
-            thread_id, 
+            job_title,
+            thread_id,
             apps_cache
         )
         if thread_match:
             logger.debug(f"✓ Thread match (job verified): {thread_match['id']}")
             return thread_match
-            
+
         # Strategy 4: "Not Specified" Fallback
         # If the email lacks a job title, try to match it to an existing app for the company
         fallback_match = self._match_not_specified_fallback(company_name, job_title, apps_cache)
         if fallback_match:
             return fallback_match
-        
+
         logger.debug(f"✗ No match for: {company_name} / {job_title}")
         return None
-    
+
     def _match_exact(
-        self, 
-        company_name: str, 
-        job_title: str, 
+        self,
+        company_name: str,
+        job_title: str,
         apps_cache: List[Dict]
     ) -> Optional[Dict]:
         """Exact string matching (case-insensitive)."""
         company_lower = company_name.lower().strip()
         job_lower = job_title.lower().strip()
-        
+
         for app in apps_cache:
             if not app.get('is_active'):
                 continue
-            
+
             app_company = app.get('company_name', '').lower().strip()
             app_job = app.get('job_title', '').lower().strip()
-            
+
             if company_lower == app_company and job_lower == app_job:
                 return app
-        
+
         return None
-    
+
     def _match_fuzzy_strict(
         self,
         company_name: str,
@@ -125,45 +125,45 @@ class ApplicationMatcher:
     ) -> Optional[Dict]:
         """
         FIXED: Fuzzy matching with STRICT job title requirement.
-        
+
         OLD (WRONG):
         composite = (company * 0.7) + (job * 0.3)
         Problem: Different jobs can still match if company is perfect
-        
+
         NEW (CORRECT):
         - company_similarity >= 0.85 AND
-        - job_similarity >= 0.75 AND  
+        - job_similarity >= 0.75 AND
         - composite >= 0.80
-        
+
         This ensures:
         - "Support Consultant WCS" != "Absolventen SAP" (different jobs)
         - "Software Engineer" == "Software Engineer (Senior)" (same job, variant)
         """
         company_clean = self._normalize_company_name(company_name)
         job_clean = self._normalize_job_title(job_title)
-        
+
         best_match = None
         best_score = 0.0
-        
+
         for app in apps_cache:
             if not app.get('is_active'):
                 continue
-            
+
             app_company = self._normalize_company_name(app.get('company_name', ''))
             app_job = self._normalize_job_title(app.get('job_title', ''))
-            
+
             company_sim = self._similarity(company_clean, app_company)
             job_sim = self._similarity(job_clean, app_job)
-            
+
             # CRITICAL: BOTH thresholds must pass
             if company_sim < self.company_threshold:
                 continue
             if job_sim < self.job_threshold:
                 continue
-            
+
             # Composite score (equal weighting now)
             composite_score = (company_sim * 0.5) + (job_sim * 0.5)
-            
+
             if composite_score >= self.composite_threshold and composite_score > best_score:
                 best_score = composite_score
                 best_match = app
@@ -172,16 +172,16 @@ class ApplicationMatcher:
                     f"Company: {company_sim:.2f}, Job: {job_sim:.2f}, "
                     f"Composite: {composite_score:.2f}"
                 )
-        
+
         if best_match:
             logger.info(
                 f"✓ Fuzzy match: '{company_name}' + '{job_title}' → "
                 f"'{best_match['company_name']}' + '{best_match['job_title']}' "
                 f"(score: {best_score:.2f})"
             )
-        
+
         return best_match
-    
+
     def _match_thread_with_job_check(
         self,
         company_name: str,
@@ -191,24 +191,24 @@ class ApplicationMatcher:
     ) -> Optional[Dict]:
         """
         Thread ID matching with MANDATORY job title verification.
-        
+
         Problem: Gmail uses same thread_id for different jobs from same sender:
         - Körber Job 1 (thread A)
         - Körber Job 2 (thread A)  ← Same thread!
-        
+
         Solution: Only trust thread_id if job titles are similar (>0.75)
         """
         for app in apps_cache:
             if not app.get('is_active'):
                 continue
-            
+
             if app.get('thread_id') == thread_id:
                 # Found thread match - but verify it's the SAME job
                 app_job = self._normalize_job_title(app.get('job_title', ''))
                 email_job = self._normalize_job_title(job_title)
-                
+
                 job_sim = self._similarity(app_job, email_job)
-                
+
                 if job_sim >= self.job_threshold:
                     logger.info(
                         f"Thread match accepted: jobs similar enough "
@@ -223,9 +223,9 @@ class ApplicationMatcher:
                         f"  Similarity: {job_sim:.2f} < {self.job_threshold}"
                     )
                     # Don't return - continue searching for actual match
-        
+
         return None
-    
+
     def _match_not_specified_fallback(
         self,
         company_name: str,
@@ -238,52 +238,52 @@ class ApplicationMatcher:
         If there are multiple apps for the company, we map it to the most recent one.
         """
         job_clean = self._normalize_job_title(job_title)
-        
+
         # Only apply fallback if incoming job title is generic/missing
         if job_clean not in ["not specified", "unknown", "n/a", ""]:
             return None
-            
+
         company_clean = self._normalize_company_name(company_name)
-        
+
         company_apps = []
         for app in apps_cache:
             if not app.get('is_active'):
                 continue
-                
+
             app_company = self._normalize_company_name(app.get('company_name', ''))
             company_sim = self._similarity(company_clean, app_company)
-            
+
             if company_sim >= self.company_threshold:
                 company_apps.append(app)
-                
+
         if not company_apps:
             return None
-            
+
         # Sort by last_updated or date_applied descending (most recent first)
         company_apps.sort(
-            key=lambda x: x.get('last_updated') or x.get('date_applied', ''), 
+            key=lambda x: x.get('last_updated') or x.get('date_applied', ''),
             reverse=True
         )
-        
+
         best_match = company_apps[0]
         logger.info(
             f"✓ Not Specified Fallback: Generic '{company_name}' email mapped to "
             f"existing job '{best_match['job_title']}'"
         )
         return best_match
-    
+
     def _normalize_company_name(self, name: str) -> str:
         """Normalize company names for matching."""
         suffixes = [
-            ' gmbh', ' ag', ' inc', ' ltd', ' llc', 
+            ' gmbh', ' ag', ' inc', ' ltd', ' llc',
             ' corporation', ' corp', ' group', ' se'
         ]
         name_lower = name.lower().strip()
-        
+
         for suffix in suffixes:
             if name_lower.endswith(suffix):
                 name_lower = name_lower[:-len(suffix)].strip()
-        
+
         # German umlauts
         replacements = {
             'ä': 'a', 'ö': 'o', 'ü': 'u', 'ß': 'ss',
@@ -291,23 +291,23 @@ class ApplicationMatcher:
         }
         for old, new in replacements.items():
             name_lower = name_lower.replace(old, new)
-        
+
         return ' '.join(name_lower.split())
-    
+
     def _normalize_job_title(self, title: str) -> str:
         """
         Normalize job titles for matching.
-        
+
         IMPORTANT: Do NOT over-normalize!
         "Support Consultant WCS" should NOT match "SAP Logistik"
-        
+
         Only remove:
         - Seniority markers (Senior, Junior, Lead)
         - Gendered markers (m/w/d in German)
         - Extra whitespace
         """
         title_lower = title.lower().strip()
-        
+
         # Remove seniority prefixes (but keep core title intact)
         seniority = ['senior', 'junior', 'lead', 'principal', 'staff']
         words = title_lower.split()
@@ -322,7 +322,7 @@ class ApplicationMatcher:
         title_lower = re.sub(r'[-_/,:]+', ' ', title_lower)
 
         return ' '.join(title_lower.split())
-    
+
     def _similarity(self, a: str, b: str) -> float:
         """Calculate similarity ratio."""
         return SequenceMatcher(None, a, b).ratio()
@@ -342,17 +342,17 @@ def upsert_application_fixed(
 ) -> str:
     """
     FIXED upsert logic with strict job title matching.
-    
+
     Returns: 'added' or 'updated'
     """
-    
+
     existing_app = matcher.find_existing_application(
         company_name=classification.company_name,
         job_title=classification.job_title,
         thread_id=email.thread_id,
         apps_cache=apps_cache
     )
-    
+
     location_updates = _build_location_updates(classification, existing_app)
 
     if existing_app:
@@ -370,13 +370,13 @@ def upsert_application_fixed(
             "source_email_id": email.email_id,
             "confidence": classification.confidence
         }
-        
+
         # Get current history
         current_history = existing_app.get('status_history', [])
         if isinstance(current_history, str):
             import json
             current_history = json.loads(current_history)
-        
+
         # Deduplicate: skip if this email is already in history
         existing_email_ids = {
             entry.get("source_email_id") or entry.get("email_id")
@@ -389,9 +389,9 @@ def upsert_application_fixed(
                 f"{classification.company_name} / {classification.job_title}"
             )
             return "updated"
-        
+
         current_history.append(status_update)
-        
+
         latest_entry = current_history[-1]
         calculated_status = _resolve_current_status(existing_app.get("status"), status_value)
 
@@ -405,13 +405,13 @@ def upsert_application_fixed(
             "source_email_id": latest_entry.get('source_email_id') or email.email_id,
             **location_updates,
         }).eq("id", existing_app['id']).execute()
-        
+
         logger.info(
             f"✓ UPDATED: {classification.company_name} / {classification.job_title} "
             f"→ Status: {calculated_status} ({len(current_history)} emails)"
         )
         return "updated"
-    
+
     else:
         # ═══ CREATE: New job application ═══
         display_status = CLASSIFICATION_TO_STATUS.get(classification.classification)
@@ -427,7 +427,7 @@ def upsert_application_fixed(
             "source_email_id": email.email_id,
             "confidence": classification.confidence
         }
-        
+
         try:
             client.table("applications").insert({
                 "user_id": user_id,
@@ -476,7 +476,7 @@ def upsert_application_fixed(
                 }).execute()
             else:
                 raise
-        
+
         logger.info(
             f"✓ ADDED: {classification.company_name} / {classification.job_title}"
         )
@@ -494,7 +494,13 @@ def _resolve_current_status(current_status: str | None, new_status: str) -> str:
 
 def _build_location_updates(classification, existing_app: Dict | None = None) -> Dict[str, str]:
     current = existing_app or {}
-    job_location = classification.job_location or classification.location or current.get("job_location") or current.get("location") or ""
+    job_location = (
+        classification.job_location
+        or classification.location
+        or current.get("job_location")
+        or current.get("location")
+        or ""
+    )
     job_city = classification.job_city or current.get("job_city") or ""
     job_country = classification.job_country or current.get("job_country") or ""
     work_mode = classification.work_mode or current.get("work_mode") or "Unknown"
@@ -523,7 +529,7 @@ def _status_priority(status: str) -> int:
 Test Case 1: Körber - 3 Different Jobs
 -----------------------------------
 Email 1: Support Consultant WCS (thread 19d368b)
-Email 2: Absolventen SAP (thread 19d392ac)  
+Email 2: Absolventen SAP (thread 19d392ac)
 Email 3: Karriere SAP (thread 19d393be)
 
 Expected Result: 3 separate applications
@@ -534,7 +540,7 @@ Expected: UPDATE application 1 (job title matches)
 Email 5: Rejection for Absolventen SAP
 Expected: UPDATE application 2
 
-Email 6: Rejection for Karriere SAP  
+Email 6: Rejection for Karriere SAP
 Expected: UPDATE application 3
 
 Final State:

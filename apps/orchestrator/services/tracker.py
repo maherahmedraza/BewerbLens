@@ -10,7 +10,6 @@ import uuid
 from datetime import date, datetime, timezone
 
 from loguru import logger
-
 from models import PIPELINE_STAGE_ORDER, PipelineStage, SyncMode
 from supabase_service import create_pipeline_run, get_client, get_last_checkpoint_for_user, init_pipeline_steps
 from tracker import PipelineCancelledError, run_pipeline_multiuser

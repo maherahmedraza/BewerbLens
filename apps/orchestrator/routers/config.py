@@ -1,7 +1,6 @@
+
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
-from services.config_service import config_service, ConfigPatch
+from services.config_service import ConfigPatch, config_service
 
 router = APIRouter()
 
@@ -25,7 +24,7 @@ async def patch_config(patch: ConfigPatch):
     # Validation: Ensure at least one field is provided
     if all(v is None for v in patch.model_dump().values()):
         raise HTTPException(status_code=400, detail="No fields to update")
-    
+
     try:
         result = await config_service.update(patch)
         return result

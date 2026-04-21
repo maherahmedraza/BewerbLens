@@ -1,5 +1,5 @@
-import pytest
 from fuzzy_matcher import ApplicationMatcher
+
 
 def test_koerber_strict_matching():
     matcher = ApplicationMatcher(
@@ -53,7 +53,7 @@ def test_koerber_strict_matching():
 
     # Let's add thread_id to app_2 cache
     apps_cache[1]["thread_ids"] = ["19d392ac", "19d393be"]
-    
+
     # Test 4: Same thread id, but totally different job
     match = matcher.find_existing_application(
         company_name="Körber",

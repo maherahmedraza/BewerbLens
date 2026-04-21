@@ -14,11 +14,12 @@ import threading
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from loguru import logger  # noqa: E402
 
 # ── sys.path centralizado (Fix #N) ───────────────────────────
 # Todas las rutas al tracker se configuran AQUÍ y solo aquí.
@@ -31,10 +32,10 @@ if TRACKER_DIR not in sys.path:
     sys.path.insert(0, TRACKER_DIR)
 
 # Después de configurar sys.path, importar los servicios
-from services.worker import worker_loop  # noqa: E402
-from services.scheduler import scheduler_service  # noqa: E402
 from routers import config as config_router  # noqa: E402
 from routers import runs as runs_router  # noqa: E402
+from services.scheduler import scheduler_service  # noqa: E402
+from services.worker import worker_loop  # noqa: E402
 
 
 @asynccontextmanager

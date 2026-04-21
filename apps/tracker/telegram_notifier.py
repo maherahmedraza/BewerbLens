@@ -9,7 +9,6 @@ from __future__ import annotations
 # ║  • Markdown escaping for all user-sourced strings          ║
 # ║  • Legacy per-item alerts for critical errors               ║
 # ╚══════════════════════════════════════════════════════════════╝
-
 import re
 from datetime import datetime, timezone
 

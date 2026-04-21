@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from datetime import date as DateType, datetime
+from datetime import date as DateType
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 

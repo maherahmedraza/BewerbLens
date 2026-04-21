@@ -1,18 +1,17 @@
-import pytest
-from datetime import date
 from supabase_service import _should_update_status
+
 
 def test_status_precedence():
     """Verifica que los estados de mayor importancia no sean sobreescritos por menores."""
     # applied -> rejection (YES)
     assert _should_update_status("Applied", "Rejected") is True
-    
+
     # rejection -> applied (NO)
     assert _should_update_status("Rejected", "Applied") is False
-    
+
     # rejection -> positive response (NO - Fix B removed the dead branch)
     assert _should_update_status("Rejected", "Positive Response") is False
-    
+
     # interview -> rejection (YES)
     assert _should_update_status("Interview", "Rejected") is True
 

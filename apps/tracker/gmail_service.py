@@ -10,15 +10,14 @@ import base64
 import hashlib
 import json
 import os
+import re
+from collections.abc import Callable
 from datetime import date, datetime, timezone
 from itertools import islice
-import re
-import pickle
-from collections.abc import Callable
 from typing import Any, Dict, Optional
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -95,7 +94,7 @@ def _decrypt_data(encrypted_str: str) -> dict:
     if encrypted_str.strip().startswith('{'):
         try:
             return json.loads(encrypted_str)
-        except:
+        except Exception:
             pass
 
     if encrypted_str.startswith("aes256gcm:"):
@@ -116,7 +115,7 @@ def _decrypt_data(encrypted_str: str) -> dict:
     if not cipher:
         try:
             return json.loads(encrypted_str)
-        except:
+        except Exception:
             logger.error("Data seems encrypted but no compatible cipher is available.")
             return {}
 
@@ -127,7 +126,7 @@ def _decrypt_data(encrypted_str: str) -> dict:
         logger.error(f"Decryption failed: {e}. Trying plain JSON fallback.")
         try:
             return json.loads(encrypted_str)
-        except:
+        except Exception:
             return {}
 
 

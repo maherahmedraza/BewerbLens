@@ -25,9 +25,9 @@ from models import (
     EmailMetadata,
     IngestionStageStats,
     PersistenceStageStats,
-    SyncMode,
     PipelineRunReport,
     PipelineStage,
+    SyncMode,
 )
 from pre_filter import apply_user_filters
 from supabase_service import (

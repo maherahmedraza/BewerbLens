@@ -1,11 +1,11 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from datetime import date
 from typing import Optional
 
+from fastapi import APIRouter, HTTPException
 from models import PipelineStage
-from services.tracker import tracker_service
+from pydantic import BaseModel
 from services.supabase_client import supabase
+from services.tracker import tracker_service
 
 router = APIRouter()
 
@@ -35,7 +35,7 @@ async def trigger_run(payload: TriggerRequest):
             status_code=400,
             detail="Invalid triggered_by. Must be 'manual', 'backfill', or 'incremental'.",
         )
-    
+
     try:
         run = await tracker_service.start_run(
             user_id=payload.user_id,
@@ -79,9 +79,9 @@ async def get_run_details(run_id: str):
             query = supabase.table("pipeline_runs").select("*").eq("id", run_id)
         except ValueError:
             query = supabase.table("pipeline_runs").select("*").eq("run_id", run_id)
-            
+
         result = query.single().execute()
-        
+
         if not result.data:
             raise HTTPException(status_code=404, detail="Run not found")
         return result.data

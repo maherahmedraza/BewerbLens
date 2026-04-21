@@ -19,14 +19,11 @@ from functools import lru_cache
 from loguru import logger
 from supabase import Client, create_client
 from tenacity import retry, stop_after_attempt, wait_exponential
-from thefuzz import fuzz
 
 from config import settings
 from models import (
-    CLASSIFICATION_TO_STATUS,
     STATUS_PRIORITY,
     ApplicationRecord,
-    EmailClassification,
     EmailMetadata,
     ProcessingLog,
     RawEmailRecord,
@@ -433,7 +430,14 @@ def get_pipeline_config(client: Client) -> dict:
 
 def get_active_run(client: Client) -> dict | None:
     try:
-        res = client.table("pipeline_runs").select("*").eq("status", "running").order("started_at", desc=True).limit(1).execute()
+        res = (
+            client.table("pipeline_runs")
+            .select("*")
+            .eq("status", "running")
+            .order("started_at", desc=True)
+            .limit(1)
+            .execute()
+        )
         return res.data[0] if res.data else None
     except Exception:
         return None

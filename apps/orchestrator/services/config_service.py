@@ -1,7 +1,8 @@
 from typing import Optional
+
+from loguru import logger
 from pydantic import BaseModel
 from services.supabase_client import supabase
-from loguru import logger
 
 # Singleton ID for the pipeline config
 SINGLETON_ID = "00000000-0000-0000-0000-000000000001"
@@ -43,7 +44,7 @@ class ConfigService:
                 .update(data)\
                 .eq("id", SINGLETON_ID)\
                 .execute()
-            
+
             logger.success("Pipeline configuration updated")
             return result.data[0] if result.data else await self.get_current()
         except Exception as e:

@@ -1,6 +1,9 @@
-import pytest
-from models import EmailMetadata
 from typing import List
+
+import pytest
+
+from models import EmailMetadata
+
 
 @pytest.fixture
 def mock_emails() -> List[EmailMetadata]:

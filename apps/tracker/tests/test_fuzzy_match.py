@@ -1,5 +1,6 @@
 from fuzzy_matcher import ApplicationMatcher, _resolve_current_status
 
+
 def test_normalize_company_name():
     matcher = ApplicationMatcher()
     assert matcher._normalize_company_name("Acme Corp") == "acme"
