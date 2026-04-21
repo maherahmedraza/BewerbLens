@@ -63,6 +63,3 @@ def test_koerber_strict_matching():
     )
     assert match is None, "Should not match even with same thread ID if job title is different"
 
-def test_upsert_logic(mocker):
-    # Depending on what upsert_application_fixed expects
-    pass
