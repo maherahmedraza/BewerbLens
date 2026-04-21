@@ -14,6 +14,7 @@ import styles from "./StatusFunnel.module.css";
 
 interface StatusFunnelProps {
   data: { stage: string; count: number }[];
+  height?: number;
 }
 
 const FUNNEL_COLORS: Record<string, { main: string; light: string }> = {
@@ -24,21 +25,20 @@ const FUNNEL_COLORS: Record<string, { main: string; light: string }> = {
   Offer: { main: "var(--chart-offer)", light: "#fbbf24" },
 };
 
-export default function StatusFunnel({ data }: StatusFunnelProps) {
+export default function StatusFunnel({ data, height = 250 }: StatusFunnelProps) {
   if (data.length === 0) {
     return <div className={styles.empty}>No funnel data</div>;
   }
 
   return (
-    <div className={styles.container}>
-      <h3 className={styles.title}>Conversion Funnel</h3>
-      <ResponsiveContainer width="100%" height={250}>
-        <BarChart data={data} layout="vertical" margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+    <div className={styles.chartShell}>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={data} layout="vertical" margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <defs>
             {data.map((entry, index) => (
               <linearGradient key={`grad-${index}`} id={`grad-${index}`} x1="0" y1="0" x2="1" y2="0">
-                <stop offset="5%" stopColor={(FUNNEL_COLORS[entry.stage] || { main: "var(--accent-blue)" }).main} stopOpacity={0.8}/>
-                <stop offset="95%" stopColor={(FUNNEL_COLORS[entry.stage] || { main: "var(--accent-blue)" }).main} stopOpacity={0.3}/>
+                <stop offset="5%" stopColor={(FUNNEL_COLORS[entry.stage] || { main: "#6366f1" }).main} stopOpacity={0.95}/>
+                <stop offset="95%" stopColor={(FUNNEL_COLORS[entry.stage] || { main: "#6366f1" }).main} stopOpacity={0.3}/>
               </linearGradient>
             ))}
           </defs>
@@ -59,7 +59,7 @@ export default function StatusFunnel({ data }: StatusFunnelProps) {
             labelStyle={{ color: "var(--text-primary)", marginBottom: "4px" }}
             itemStyle={{ fontWeight: 600, color: "var(--text-secondary)" }}
           />
-          <Bar dataKey="count" radius={[0, 4, 4, 0]} animationDuration={800}>
+          <Bar dataKey="count" radius={[0, 8, 8, 0]} animationDuration={800}>
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={`url(#grad-${index})`} />
             ))}

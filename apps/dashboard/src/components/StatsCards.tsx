@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { STATUS_COLORS, type ApplicationStats } from "@/lib/types";
+import { type ApplicationStats } from "@/lib/types";
 import styles from "./StatsCards.module.css";
 import { 
   BriefcaseIcon, 

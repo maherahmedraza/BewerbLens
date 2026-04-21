@@ -1,27 +1,16 @@
-.container {
-  background: var(--bg-card);
-  border-top: 4px solid var(--accent-red);
-  border-left: none;
-  border-right: none;
-  border-bottom: none;
-  border-radius: var(--radius);
-  padding: 24px 0px 10px 0px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-}
-
-.title {
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 24px;
-  padding-left: 20px;
-  color: var(--text-primary);
+.chartShell {
+  width: 100%;
+  min-height: 260px;
 }
 
 .empty {
-  text-align: center;
-  padding: 40px;
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  padding: 32px;
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px dashed var(--border-color);
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.06), transparent);
   color: var(--text-muted);
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  border-top: 4px solid var(--accent-red);
+  text-align: center;
 }

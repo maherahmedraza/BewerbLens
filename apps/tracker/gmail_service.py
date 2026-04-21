@@ -31,24 +31,48 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 GMAIL_BATCH_SIZE = 10
 
-QUERY_EXCLUDED_SENDERS = [
-    "jobalerts-noreply@linkedin.com",
-    "info@jobagent.stepstone.de",
-    "jobalert@indeed.com",
-    "alert@indeed.com",
-    "noreply@indeed.com",
-    "news@mail.xing.com",
-]
+QUERY_EXCLUDED_SENDERS: tuple[str, ...] = ()
 
 JOB_KEYWORDS = [
-    "bewerbung", "application", "absage", "rejection",
-    "einladung", "interview", "eingangsbestätigung",
-    "eingangsbestaetigung", "angebot", "offer",
-    "karriere", "career", "recruitment", "hiring",
-    "status", "update", "assessment", "talent",
-    '"thank you for applying"', '"we received"',
-    '"ihre bewerbung"', '"deine bewerbung"',
-    '"next steps"', '"nächste schritte"',
+    "application",
+    '"your application"',
+    "bewerbung",
+    '"deine bewerbung"',
+    '"ihre bewerbung"',
+    "beworben",
+    "absage",
+    "rejection",
+    "leider",
+    "einladung",
+    "interview",
+    "gespräch",
+    "gespraech",
+    "eingangsbestätigung",
+    "eingangsbestaetigung",
+    "bestätigung",
+    "angebot",
+    "offer",
+    "karriere",
+    "career",
+    "recruitment",
+    "hiring",
+    "candidate",
+    "position",
+    "role",
+    "status",
+    "update",
+    "assessment",
+    "talent",
+    '"thank you for applying"',
+    '"thank you for your interest"',
+    '"we received"',
+    '"moving forward"',
+    '"next steps"',
+    '"next stage"',
+    '"nächste schritte"',
+    '"naechste schritte"',
+    '"application update"',
+    '"application status"',
 ]
 
 def _get_cipher():
@@ -315,11 +339,14 @@ def save_gmail_credentials_to_db(client, user_id: str, credentials: Credentials)
 # ══════════════════════════════════════════════════════════════
 
 def _build_query(after_date: date, only_unread: bool = False) -> str:
-    keywords_clause = " OR ".join(JOB_KEYWORDS)
-    exclusions = " ".join(f"-from:{s}" for s in QUERY_EXCLUDED_SENDERS)
+    keywords_clause = " OR ".join(dict.fromkeys(JOB_KEYWORDS))
     after_str = after_date.strftime("%Y/%m/%d")
-    unread_clause = " is:unread" if only_unread else ""
-    query = f"({keywords_clause}) {exclusions} after:{after_str}{unread_clause}"
+    query_parts = [f"({keywords_clause})", f"after:{after_str}"]
+    if QUERY_EXCLUDED_SENDERS:
+        query_parts.insert(1, " ".join(f"-from:{sender}" for sender in QUERY_EXCLUDED_SENDERS))
+    if only_unread:
+        query_parts.append("is:unread")
+    query = " ".join(query_parts)
     logger.info(f"Gmail query built with after:{after_str}")
     return query
 

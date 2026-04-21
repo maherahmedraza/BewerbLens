@@ -144,7 +144,9 @@ export default function ProfileSettingsPage() {
       const callbackMessage = searchParams.get("message");
 
       if (gmailState === "connected") {
-        setIntegrationMessage("Gmail connected. You can start your backfill from Settings.");
+        setIntegrationMessage(
+          "Gmail connected. Queue your first broad backfill from Settings to fetch read and unread application emails."
+        );
       } else if (gmailState === "error") {
         setIntegrationMessage(callbackMessage || "Gmail connection failed.");
       }
@@ -404,7 +406,10 @@ export default function ProfileSettingsPage() {
             <option value="fr">French (FR)</option>
             <option value="es">Spanish (ES)</option>
           </select>
-          <p className={styles.helpText}>This refreshes the default include and exclude filters.</p>
+          <p className={styles.helpText}>
+            This refreshes your saved default filters. Broad discovery mode is currently permissive
+            so more candidate emails can reach Gemini.
+          </p>
         </div>
       </section>
 
@@ -418,7 +423,11 @@ export default function ProfileSettingsPage() {
               {gmailStatusLabel}
             </span>
           </div>
-          <p>Authorize Gmail once. BewerbLens stores the refresh token server-side and keeps sync controls in Settings.</p>
+          <p>
+            BewerbLens uses the shared backend Gemini key, while each user connects Gmail with
+            OAuth once. The refresh token is stored server-side and your first run is queued from
+            Settings.
+          </p>
           {profile.supportsSyncSchema ? (
             <p className={styles.helpText}>
               Connected: {formatDate(profile.gmail_connected_at)} · Via:{" "}
@@ -513,7 +522,8 @@ export default function ProfileSettingsPage() {
       <section className={styles.section}>
         <h2>Email Filters</h2>
         <p className={styles.helpText}>
-          Include and exclude rules run before classification so you can keep noisy alerts out of the pipeline.
+          Your filters are still saved here for later tuning, but broad discovery mode currently
+          bypasses restrictive filter rules so more candidate emails can reach Gemini first.
         </p>
 
         <button onClick={() => void addFilter()} className={styles.btnSecondary}>

@@ -13,6 +13,8 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 
+const supabase = createClient();
+
 interface LogEntry {
   id: string;
   level: string;
@@ -27,7 +29,6 @@ interface EnhancedLogViewerProps {
 }
 
 export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLogViewerProps) {
-  const supabase = createClient();
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");

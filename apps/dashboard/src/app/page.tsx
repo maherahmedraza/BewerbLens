@@ -2,16 +2,13 @@ import StatsCards from "@/components/StatsCards";
 import MonthlyChart from "@/components/charts/MonthlyChart";
 import StatusFunnel from "@/components/charts/StatusFunnel";
 import { createClient } from "@/lib/supabase/server";
+import { buildMonthlyApplications, getApplicationsForCurrentUser } from "@/lib/server/applications";
 import type { MonthlyApplication, ConversionFunnel } from "@/lib/types";
 import styles from "./page.module.css";
 
 async function getMonthlyData(): Promise<MonthlyApplication[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("monthly_applications")
-    .select("*")
-    .order("month", { ascending: true });
-  return (data as MonthlyApplication[]) || [];
+  const applications = await getApplicationsForCurrentUser();
+  return buildMonthlyApplications(applications);
 }
 
 async function getFunnelData(): Promise<ConversionFunnel[]> {

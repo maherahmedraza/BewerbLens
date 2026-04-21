@@ -92,6 +92,25 @@
   background: var(--bg-hover);
 }
 
+.noticeCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.12), transparent 36%),
+    var(--bg-card);
+}
+
+.noticeTitle {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 .label {
   font-size: 14px;
   font-weight: 600;

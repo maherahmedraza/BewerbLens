@@ -13,6 +13,8 @@ from typing import List, Tuple
 
 from loguru import logger
 
+from config import settings
+
 PLATFORM_ALLOWLIST_SENDERS = (
     "jobs-noreply@linkedin.com",
     "noreply@xing.com",
@@ -49,6 +51,18 @@ def apply_user_filters(client, user_id: str, emails: List) -> Tuple[List, Filter
     3. Apply EXCLUDE filters second (blacklist)
     4. Filters are processed by priority (lower number = higher priority)
     """
+
+    if settings.bypass_user_email_filters:
+        logger.warning(
+            f"Broad discovery mode enabled for user {user_id}. "
+            "Bypassing user-defined filters so Gemini can classify more candidate emails."
+        )
+        return emails, FilterStats(
+            total=len(emails),
+            passed=len(emails),
+            filtered=0,
+            details=[],
+        )
 
     # Fetch user's filters
     filters_result = client.table("email_filters").select("*").eq(
@@ -240,73 +254,65 @@ def create_default_filters_for_user(client, user_id: str, region: str = 'en'):
     # Delete existing filters
     client.table("email_filters").delete().eq("user_id", user_id).execute()
 
+    english_filters = [
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'application', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'your application', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'thank you for applying', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'thank you for your interest', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'moving forward', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'we received', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'interview', 'priority': 2},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'offer', 'priority': 2},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'rejection', 'priority': 3},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'unfortunately', 'priority': 3},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'next steps', 'priority': 4},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'status', 'priority': 4},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'career', 'priority': 5},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'hiring', 'priority': 5},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'recruitment', 'priority': 5},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'talent', 'priority': 5},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'assessment', 'priority': 5},
+        {'filter_type': 'include', 'field': 'body', 'pattern': 'application', 'priority': 6},
+        {'filter_type': 'include', 'field': 'body', 'pattern': 'your application', 'priority': 6},
+        {'filter_type': 'include', 'field': 'body', 'pattern': 'thank you for your interest', 'priority': 6},
+        {'filter_type': 'include', 'field': 'body', 'pattern': 'moving forward', 'priority': 6},
+    ]
+
+    german_filters = [
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'bewerbung', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'deine bewerbung', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'ihre bewerbung', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'beworben', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'eingangsbestätigung', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'bestätigung', 'priority': 1},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'interview', 'priority': 2},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'gespräch', 'priority': 2},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'gespraech', 'priority': 2},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'absage', 'priority': 3},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'leider', 'priority': 3},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'rückmeldung', 'priority': 3},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'nächste schritte', 'priority': 4},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'naechste schritte', 'priority': 4},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'karriere', 'priority': 5},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'talent', 'priority': 5},
+        {'filter_type': 'include', 'field': 'subject', 'pattern': 'stelle', 'priority': 5},
+        {'filter_type': 'include', 'field': 'body', 'pattern': 'bewerbung', 'priority': 6},
+        {'filter_type': 'include', 'field': 'body', 'pattern': 'deine bewerbung', 'priority': 6},
+        {'filter_type': 'include', 'field': 'body', 'pattern': 'ihre bewerbung', 'priority': 6},
+        {'filter_type': 'include', 'field': 'body', 'pattern': 'leider', 'priority': 6},
+    ]
+
     # English defaults
     if region == 'en':
-        filters = [
-            # INCLUDE patterns
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'application', 'priority': 1},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'applied', 'priority': 1},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'confirmation', 'priority': 1},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'thank you for applying', 'priority': 1},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'we received', 'priority': 1},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'interview', 'priority': 2},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'offer', 'priority': 2},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'rejection', 'priority': 3},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'unfortunately', 'priority': 3},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'update', 'priority': 4},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'status', 'priority': 4},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'career', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'hiring', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'recruitment', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'talent', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'assessment', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'next steps', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'candidacy', 'priority': 6},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'position', 'priority': 6},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'role', 'priority': 6},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'action required', 'priority': 6},
-
-            # EXCLUDE patterns
-            {'filter_type': 'exclude', 'field': 'sender', 'pattern': 'noreply@linkedin.com', 'priority': 10},
-            {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'job alert', 'priority': 10},
-            {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'jobalert', 'priority': 10},
-            {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'recommended for you', 'priority': 10},
-        ]
+        filters = english_filters
 
     # German defaults
     elif region == 'de':
-        filters = [
-            # INCLUDE patterns
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'bewerbung', 'priority': 1},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'beworben', 'priority': 1},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'eingangsbestätigung', 'priority': 1},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'bestätigung', 'priority': 1},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'interview', 'priority': 2},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'gespräch', 'priority': 2},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'absage', 'priority': 3},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'leider', 'priority': 3},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'rückmeldung', 'priority': 3},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'update', 'priority': 4},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'status', 'priority': 4},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'karriere', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'einstellung', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'talent', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'nächste schritte', 'priority': 5},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'kandidatur', 'priority': 6},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'stelle', 'priority': 6},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'position', 'priority': 6},
-            {'filter_type': 'include', 'field': 'subject', 'pattern': 'profil', 'priority': 6},
-
-            # EXCLUDE patterns
-            {'filter_type': 'exclude', 'field': 'sender', 'pattern': 'noreply@linkedin.com', 'priority': 10},
-            {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'jobalarm', 'priority': 10},
-            {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'job alert', 'priority': 10},
-            {'filter_type': 'exclude', 'field': 'subject', 'pattern': 'empfehlungen', 'priority': 10},
-        ]
+        filters = german_filters
 
     else:
-        logger.warning(f"Unknown region '{region}'. Using empty filters.")
-        filters = []
+        logger.warning(f"Unknown region '{region}'. Falling back to broad bilingual defaults.")
+        filters = english_filters + german_filters
 
     # Insert filters
     for filter_data in filters:

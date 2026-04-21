@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Application, StatusHistoryEntry } from "@/lib/types";
+import { Application } from "@/lib/types";
 import styles from "./ApplicationTable.module.css";
 import { 
   EnvelopeIcon, 

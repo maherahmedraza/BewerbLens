@@ -99,6 +99,7 @@ graph TB
 ### AI Pipeline
 - **Three-stage execution** — Ingestion, Analysis, and Persistence are tracked independently in `pipeline_run_steps` with per-step progress percentages.
 - **Incremental Checkpointing** — Only processes new emails since the last successful run.
+- **Broad Discovery Mode** — During maximum-capture runs, Gmail queries stay intentionally broad and restrictive pre-filters are bypassed so more candidate emails reach Gemini.
 - **Gemini 3.1 Flash-Lite** — Default economical classifier model, requested with Structured Outputs / JSON Schema for robust parsing.
 - **Fuzzy Matching** — Resolves company/job title naming inconsistencies across email threads and job portals.
 - **Status Priority** — Terminal states (Offer, Rejected) are never overwritten by later lower-priority emails.
@@ -110,6 +111,7 @@ graph TB
 - **Pipeline View** — Stage-by-stage progress bars, execution history table, config panel (pause, interval, retention), and per-run log drawer.
 - **Analytics Hub** — Interactive charts for application trends plus operational usage telemetry for Gmail, Gemini, Telegram, and sync health.
 - **Secure Integrations** — Gmail OAuth and Telegram linking happen through server-side route handlers so tokens and chat IDs never need to live in client state.
+- **Spreadsheet Export** — Applications can be exported as CSV for Excel and Google Sheets.
 - **Modern UI** — Glassmorphic design, dark mode support, and responsive layouts.
 
 ---
@@ -199,6 +201,13 @@ npm install && npm run dev
 ```
 
 Visit `http://localhost:3000` to access the dashboard.
+
+### 6. Connect Gmail and run the first pipeline
+
+1. Sign in to the dashboard and open **Profile**.
+2. Click **Connect Gmail** to authorize Gmail with OAuth. Users do **not** paste Gmail API keys into the app.
+3. Open **Settings** and queue a **Backfill** run. This broad-discovery pass fetches read and unread candidate emails, then lets Gemini decide job relevance.
+4. Open **Applications** to review results or export them as CSV for Excel / Google Sheets.
 
 ---
 

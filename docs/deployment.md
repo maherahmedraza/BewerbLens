@@ -186,7 +186,7 @@ git push to main
 
 1. **Backend health**: `GET https://<your-do-app>.ondigitalocean.app/health`
    - Expect: `{"status": "ok", "worker": "active", "scheduler": true}`
-2. **Frontend**: Visit your Vercel URL → Login → Navigate to Pipeline page.
-3. **Manual sync**: Click **Manual Sync** on the Pipeline page → Watch stage progress bars animate.
+2. **Frontend**: Visit your Vercel URL → Login → Connect Gmail from the **Profile** page.
+3. **First backfill**: Open **Settings** and queue a backfill run so the user OAuth token is exercised and the pipeline processes read + unread candidate emails.
 4. **Scheduler verification**: Confirm the backend reports `"scheduler": true` on `/health`, then wait for the configured interval or trigger a manual run from the dashboard.
 5. **Telegram**: Generate a link code in the Profile page, complete the bot handshake, and verify you receive a consolidated run summary after the pipeline completes.

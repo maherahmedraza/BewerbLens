@@ -158,26 +158,17 @@ export default function SettingsPage() {
     setMessage("");
 
     try {
-      const { data, error } = await supabase.from("applications").select("*");
-      if (error) {
-        throw error;
-      }
-
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = "applications-export.json";
-      anchor.click();
-      URL.revokeObjectURL(url);
-      setMessage("Data exported successfully.");
+      window.location.assign("/api/applications/export");
+      setMessage("CSV export started. The file opens cleanly in Excel and Google Sheets.");
     } catch (error) {
       setMessage(`Export failed: ${getErrorMessage(error)}`);
     } finally {
       setLoading(false);
     }
+  }
+
+  function connectGmail() {
+    window.location.assign("/api/integrations/google/start?next=/settings");
   }
 
   async function handleDelete() {
@@ -217,6 +208,23 @@ export default function SettingsPage() {
           <p className={styles.description}>Loading sync settings...</p>
         ) : syncSettings ? (
           <div className={styles.syncGrid}>
+            <div className={styles.noticeCard}>
+              <h3 className={styles.noticeTitle}>How first-time sync works</h3>
+              <p className={styles.description}>
+                The backend Gemini key stays shared on DigitalOcean. Each user connects Gmail via
+                OAuth, then queues a backfill here to process read and unread emails.
+              </p>
+              {!gmailConnected ? (
+                <button className={styles.button} onClick={connectGmail} disabled={loading}>
+                  Connect Gmail with OAuth
+                </button>
+              ) : null}
+              <p className={styles.helperText}>
+                Broad discovery mode is currently permissive and lets Gemini decide job relevance so
+                you can measure maximum capture before tightening filters later.
+              </p>
+            </div>
+
             {!syncSettings.supportsSyncSchema ? (
               <p className={styles.errorText}>
                 Migration <code>010_sync_integrations_analytics.sql</code> has not been applied yet.
@@ -370,9 +378,11 @@ export default function SettingsPage() {
 
       <div className={styles.section}>
         <h2 className={styles.sectionTitle}>GDPR — Right to Access</h2>
-        <p className={styles.description}>Export all your application data as a JSON file.</p>
+        <p className={styles.description}>
+          Export all your application data as a spreadsheet-friendly CSV for Excel or Google Sheets.
+        </p>
         <button className={styles.button} onClick={() => void handleExport()} disabled={loading}>
-          Export Data (JSON)
+          Export Data (CSV)
         </button>
       </div>
 

@@ -13,7 +13,7 @@
 import { useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 
-import { type Application, type StatusHistoryEntry as StatusUpdate } from "@/lib/types";
+import { type Application } from "@/lib/types";
 
 interface ApplicationThreadCardProps {
   application: Application;

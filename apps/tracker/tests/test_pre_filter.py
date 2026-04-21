@@ -1,6 +1,9 @@
 from datetime import date
 from unittest.mock import MagicMock
 
+import pytest
+
+from config import settings
 from models import EmailMetadata
 from pre_filter import apply_user_filters
 
@@ -21,8 +24,16 @@ def _make_mock_client(filters=None):
     return client
 
 
+@pytest.fixture(autouse=True)
+def restore_filter_setting():
+    original = settings.bypass_user_email_filters
+    yield
+    settings.bypass_user_email_filters = original
+
+
 def test_no_filters_allows_all():
     """When user has no active filters, all emails pass through."""
+    settings.bypass_user_email_filters = True
     client = _make_mock_client(filters=[])
     emails = [
         EmailMetadata(
@@ -38,8 +49,9 @@ def test_no_filters_allows_all():
     assert stats.filtered == 0
 
 
-def test_exclude_filter_blocks_matching_emails():
-    """Emails matching an EXCLUDE filter should be removed."""
+def test_broad_discovery_mode_bypasses_restrictive_filters():
+    """Broad discovery mode bypasses restrictive user filters."""
+    settings.bypass_user_email_filters = True
     client = _make_mock_client(filters=[
         {
             "filter_type": "EXCLUDE",
@@ -65,11 +77,12 @@ def test_exclude_filter_blocks_matching_emails():
     ]
 
     filtered, stats = apply_user_filters(client, "test-user-id", emails)
-    assert any(e.email_id == "2" for e in filtered)
-    assert stats.filtered >= 1
+    assert len(filtered) == 2
+    assert stats.filtered == 0
 
 
-def test_platform_allowlist_bypasses_include_and_exclude_filters():
+def test_platform_allowlist_bypasses_include_and_exclude_filters_when_filtering_enabled():
+    settings.bypass_user_email_filters = False
     client = _make_mock_client(filters=[
         {
             "filter_type": "INCLUDE",
@@ -109,3 +122,41 @@ def test_platform_allowlist_bypasses_include_and_exclude_filters():
 
     assert len(filtered) == 1
     assert stats.filtered == 0
+
+
+def test_exclude_filter_blocks_matching_emails_when_filtering_enabled():
+    settings.bypass_user_email_filters = False
+    client = _make_mock_client(filters=[
+        {
+            "filter_type": "EXCLUDE",
+            "field": "sender",
+            "pattern": "no-reply@linkedin.com",
+            "is_active": True,
+            "priority": 1,
+        }
+    ])
+    emails = [
+        EmailMetadata(
+            email_id="1",
+            thread_id="t1",
+            sender="no-reply@linkedin.com",
+            sender_email="no-reply@linkedin.com",
+            subject="New Job Alert",
+            body="...",
+            date=date(2026, 4, 11),
+        ),
+        EmailMetadata(
+            email_id="2",
+            thread_id="t2",
+            sender="recruiter@company.com",
+            sender_email="recruiter@company.com",
+            subject="Interview Invitation",
+            body="...",
+            date=date(2026, 4, 11),
+        ),
+    ]
+
+    filtered, stats = apply_user_filters(client, "test-user-id", emails)
+
+    assert [email.email_id for email in filtered] == ["2"]
+    assert stats.filtered == 1
