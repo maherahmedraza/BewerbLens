@@ -1,6 +1,7 @@
 
 from fastapi import APIRouter, HTTPException
 from services.config_service import ConfigPatch, config_service
+from services.scheduler import scheduler_service
 
 router = APIRouter()
 
@@ -27,6 +28,7 @@ async def patch_config(patch: ConfigPatch):
 
     try:
         result = await config_service.update(patch)
+        await scheduler_service.reschedule_from_db(result)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

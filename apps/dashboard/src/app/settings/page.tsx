@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import WorkspaceSettings from "@/components/settings/WorkspaceSettings";
+import Tooltip from "@/components/ui/Tooltip";
 import api from "@/lib/api";
 import type { PipelineConfig, SyncMode, SyncStatus } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
@@ -261,6 +262,7 @@ export default function SettingsPage() {
               <div className={styles.configRow}>
                 <label className={styles.label} htmlFor="backfill-start">
                   Backfill start date
+                  <Tooltip iconOnly content="Determines how far back the initial sync looks for job applications. Set this to the date you started applying." />
                 </label>
                 <input
                   id="backfill-start"
@@ -332,7 +334,10 @@ export default function SettingsPage() {
         ) : config ? (
           <div className={styles.fieldGrid}>
             <div className={styles.configRow}>
-              <label className={styles.label}>Sync Interval (hours)</label>
+              <label className={styles.label}>
+                Sync Interval (hours)
+                <Tooltip iconOnly content="How often the shared orchestrator checks for new emails. Frequent syncs consume more AI API quota." />
+              </label>
               <select
                 className={styles.select}
                 value={config.schedule_interval_hours}
@@ -351,7 +356,10 @@ export default function SettingsPage() {
             </div>
 
             <div className={styles.configRow}>
-              <label className={styles.label}>Log Retention (days)</label>
+              <label className={styles.label}>
+                Log Retention (days)
+                <Tooltip iconOnly content="How long pipeline execution logs and usage history are kept before being automatically deleted to save space." />
+              </label>
               <select
                 className={styles.select}
                 value={config.retention_days}
@@ -369,7 +377,10 @@ export default function SettingsPage() {
             </div>
 
             <div className={styles.configRow}>
-              <label className={styles.label}>Backfill Fairness Cap</label>
+              <label className={styles.label}>
+                Backfill Fairness Cap
+                <Tooltip iconOnly content="Maximum number of emails processed per run. Large backfills are chunked so one user cannot monopolize the worker." />
+              </label>
               <select
                 className={styles.select}
                 value={config.max_emails_per_run ?? 250}
@@ -386,7 +397,10 @@ export default function SettingsPage() {
             </div>
 
             <div className={styles.configRow}>
-              <label className={styles.label}>Pipeline Status</label>
+              <label className={styles.label}>
+                Pipeline Status
+                <Tooltip iconOnly content="Pause the pipeline to stop scheduled syncs without losing data. On-demand syncs will still work." />
+              </label>
               <button
                 className={`${styles.button} ${config.is_paused ? styles.success : styles.warning}`}
                 disabled={loading}
