@@ -2,7 +2,9 @@ name: Deploy Backend Preview (DigitalOcean)
 
 on:
   push:
-    branches: [dev]
+    branches:
+      - dev
+      - "dev/**"
     paths:
       - "apps/tracker/**"
       - "apps/orchestrator/**"
