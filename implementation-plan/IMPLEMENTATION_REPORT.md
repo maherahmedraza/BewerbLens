@@ -67,6 +67,7 @@
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel | Browser Supabase anon key |
 | `NEXT_PUBLIC_ORCHESTRATOR_URL` | Vercel | Public orchestrator base URL used by the server proxy fallback |
 | `ORCHESTRATOR_URL` | Optional in Docker/dev/Vercel | Server-only override for private network routing |
+| `ORCHESTRATOR_API_KEY` | DigitalOcean + Vercel | Shared secret used to authenticate the dashboard to the backend orchestrator |
 | `GEMINI_API_KEY` | DigitalOcean | AI classification |
 | `TELEGRAM_BOT_TOKEN` | DigitalOcean | Run summaries and follow-up reminders |
 | `TELEGRAM_ENABLED` | DigitalOcean | Global notification gate |
