@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import WorkspaceSettings from "@/components/settings/WorkspaceSettings";
+import Tooltip from "@/components/ui/Tooltip";
 import api from "@/lib/api";
 import type { PipelineConfig, SyncMode, SyncStatus } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
@@ -196,9 +198,17 @@ export default function SettingsPage() {
 
   return (
     <div className={styles.container}>
-      <h1 className={styles.heading}>Settings</h1>
+      <header className={styles.header}>
+        <span className={styles.eyebrow}>Workspace controls</span>
+        <h1 className={styles.heading}>One place for account, sync, notifications, and data controls.</h1>
+        <p className={styles.description}>
+          Settings now groups personal account setup, integrations, pipeline controls, and privacy actions
+          into a single workspace so configuration lives in one place.
+        </p>
+      </header>
 
-      <div className={styles.section}>
+      <div className={styles.stack}>
+      <div className={styles.section} id="sync-controls">
         <h2 className={styles.sectionTitle}>Sync Controls</h2>
         <p className={styles.description}>
           Choose the backfill window for first-time syncs, check the latest status, and trigger on-demand runs.
@@ -252,6 +262,7 @@ export default function SettingsPage() {
               <div className={styles.configRow}>
                 <label className={styles.label} htmlFor="backfill-start">
                   Backfill start date
+                  <Tooltip iconOnly content="Determines how far back the initial sync looks for job applications. Set this to the date you started applying." />
                 </label>
                 <input
                   id="backfill-start"
@@ -280,7 +291,7 @@ export default function SettingsPage() {
               {syncSettings.gmail_connected_via === "env_fallback" ? (
                 <p className={styles.errorText}>
                   This user is still running on the legacy Gmail environment fallback. Connect Gmail
-                  from the Profile page to switch to stored OAuth credentials.
+                  from Workspace Settings to switch to stored OAuth credentials.
                 </p>
               ) : null}
 
@@ -314,7 +325,8 @@ export default function SettingsPage() {
       <div className={styles.section}>
         <h2 className={styles.sectionTitle}>Pipeline Configuration</h2>
         <p className={styles.description}>
-          Control how often the shared orchestrator checks for new emails and how long run history is retained.
+          Control how often the shared orchestrator checks for new emails, how much backlog each run can process,
+          and how long operational history is retained.
         </p>
 
         {configLoading ? (
@@ -322,7 +334,10 @@ export default function SettingsPage() {
         ) : config ? (
           <div className={styles.fieldGrid}>
             <div className={styles.configRow}>
-              <label className={styles.label}>Sync Interval (hours)</label>
+              <label className={styles.label}>
+                Sync Interval (hours)
+                <Tooltip iconOnly content="How often the shared orchestrator checks for new emails. Frequent syncs consume more AI API quota." />
+              </label>
               <select
                 className={styles.select}
                 value={config.schedule_interval_hours}
@@ -341,7 +356,10 @@ export default function SettingsPage() {
             </div>
 
             <div className={styles.configRow}>
-              <label className={styles.label}>Log Retention (days)</label>
+              <label className={styles.label}>
+                Log Retention (days)
+                <Tooltip iconOnly content="How long pipeline execution logs and usage history are kept before being automatically deleted to save space." />
+              </label>
               <select
                 className={styles.select}
                 value={config.retention_days}
@@ -359,7 +377,30 @@ export default function SettingsPage() {
             </div>
 
             <div className={styles.configRow}>
-              <label className={styles.label}>Pipeline Status</label>
+              <label className={styles.label}>
+                Backfill Fairness Cap
+                <Tooltip iconOnly content="Maximum number of emails processed per run. Large backfills are chunked so one user cannot monopolize the worker." />
+              </label>
+              <select
+                className={styles.select}
+                value={config.max_emails_per_run ?? 250}
+                disabled={loading}
+                onChange={(event) =>
+                  void updateConfig({ max_emails_per_run: Number(event.target.value) })
+                }
+              >
+                <option value={100}>100 emails / run</option>
+                <option value={250}>250 emails / run</option>
+                <option value={500}>500 emails / run</option>
+                <option value={1000}>1000 emails / run</option>
+              </select>
+            </div>
+
+            <div className={styles.configRow}>
+              <label className={styles.label}>
+                Pipeline Status
+                <Tooltip iconOnly content="Pause the pipeline to stop scheduled syncs without losing data. On-demand syncs will still work." />
+              </label>
               <button
                 className={`${styles.button} ${config.is_paused ? styles.success : styles.warning}`}
                 disabled={loading}
@@ -368,6 +409,11 @@ export default function SettingsPage() {
                 {config.is_paused ? "Resume Pipeline" : "Pause Pipeline"}
               </button>
             </div>
+
+            <p className={styles.helperText}>
+              If a mailbox has a large backlog, BewerbLens now stores everything immediately but only processes the
+              configured chunk per run. Deferred emails stay queued for the next run instead of starving other users.
+            </p>
           </div>
         ) : (
           <p className={styles.description}>
@@ -401,6 +447,9 @@ export default function SettingsPage() {
       </div>
 
       {message ? <div className={styles.message}>{message}</div> : null}
+      </div>
+
+      <WorkspaceSettings showHeading={false} />
     </div>
   );
 }

@@ -18,11 +18,11 @@ interface StatusFunnelProps {
 }
 
 const FUNNEL_COLORS: Record<string, { main: string; light: string }> = {
-  "Applications Submitted": { main: "var(--chart-applied)", light: "var(--chart-applied-light)" },
-  "Awaiting Response": { main: "var(--chart-applied)", light: "var(--chart-applied-light)" },
-  "Positive Response": { main: "var(--chart-positive)", light: "var(--chart-positive-light)" },
-  Interview: { main: "var(--chart-interview)", light: "#c084fc" },
-  Offer: { main: "var(--chart-offer)", light: "#fbbf24" },
+  "Applications Submitted": { main: "var(--chart-submitted)", light: "var(--chart-submitted-soft)" },
+  "Awaiting Response": { main: "var(--chart-applied)", light: "var(--chart-applied-soft)" },
+  "Positive Response": { main: "var(--chart-positive)", light: "var(--chart-positive-soft)" },
+  Interview: { main: "var(--chart-interview)", light: "var(--chart-interview-soft)" },
+  Offer: { main: "var(--chart-offer)", light: "var(--chart-offer-soft)" },
 };
 
 export default function StatusFunnel({ data, height = 250 }: StatusFunnelProps) {
@@ -31,14 +31,18 @@ export default function StatusFunnel({ data, height = 250 }: StatusFunnelProps) 
   }
 
   return (
-    <div className={styles.chartShell}>
+    <div
+      className={styles.chartShell}
+      role="img"
+      aria-label="Application conversion funnel from submitted applications to offers"
+    >
       <ResponsiveContainer width="100%" height={height}>
         <BarChart data={data} layout="vertical" margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <defs>
             {data.map((entry, index) => (
               <linearGradient key={`grad-${index}`} id={`grad-${index}`} x1="0" y1="0" x2="1" y2="0">
-                <stop offset="5%" stopColor={(FUNNEL_COLORS[entry.stage] || { main: "#6366f1" }).main} stopOpacity={0.95}/>
-                <stop offset="95%" stopColor={(FUNNEL_COLORS[entry.stage] || { main: "#6366f1" }).main} stopOpacity={0.3}/>
+                <stop offset="5%" stopColor={(FUNNEL_COLORS[entry.stage] || { main: "var(--chart-applied)" }).main} stopOpacity={0.95}/>
+                <stop offset="95%" stopColor={(FUNNEL_COLORS[entry.stage] || { main: "var(--chart-applied)" }).main} stopOpacity={0.3}/>
               </linearGradient>
             ))}
           </defs>
@@ -59,7 +63,7 @@ export default function StatusFunnel({ data, height = 250 }: StatusFunnelProps) 
             labelStyle={{ color: "var(--text-primary)", marginBottom: "4px" }}
             itemStyle={{ fontWeight: 600, color: "var(--text-secondary)" }}
           />
-          <Bar dataKey="count" radius={[0, 8, 8, 0]} animationDuration={800}>
+          <Bar dataKey="count" radius={[0, 8, 8, 0]} animationDuration={800} shapeRendering="geometricPrecision">
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={`url(#grad-${index})`} />
             ))}

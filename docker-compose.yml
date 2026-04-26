@@ -1,0 +1,25 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+
+  dashboard:
+    image: node:22-alpine
+    working_dir: /app/apps/dashboard
+    env_file:
+      - .env
+    environment:
+      ORCHESTRATOR_URL: http://backend:8000
+      NEXT_PUBLIC_ORCHESTRATOR_URL: http://localhost:8000
+    command: sh -c "npm ci && npm run dev -- --hostname 0.0.0.0"
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend

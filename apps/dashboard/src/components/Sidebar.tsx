@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getOrCreateCompatibleUserProfile } from "@/lib/userProfiles";
 import styles from "./Sidebar.module.css";
 import { 
   HomeIcon, 
@@ -17,7 +18,7 @@ import {
 } from "@heroicons/react/24/outline";
 
 const NAV_ITEMS = [
-  { name: "Dashboard", href: "/", icon: HomeIcon },
+  { name: "Dashboard", href: "/dashboard", icon: HomeIcon },
   { name: "Applications", href: "/applications", icon: TableCellsIcon },
   { name: "Analytics", href: "/analytics", icon: ChartPieIcon },
   { name: "Pipeline", href: "/pipeline", icon: RectangleStackIcon },
@@ -27,7 +28,7 @@ const NAV_ITEMS = [
 export default function Sidebar() {
   const pathname = usePathname();
   const supabase = useMemo(() => createClient(), []);
-  const [profile, setProfile] = useState<{ full_name: string | null; email: string } | null>(null);
+  const [profile, setProfile] = useState<{ full_name: string | null; email: string; role: "user" | "admin" } | null>(null);
   const [loading, setLoading] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -37,14 +38,16 @@ export default function Sidebar() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        const { data, error } = await supabase
-          .from("user_profiles")
-          .select("full_name, email")
-          .eq("id", user.id)
-          .single();
-
-        if (error) throw error;
-        setProfile(data);
+        const compatibleProfile = await getOrCreateCompatibleUserProfile(
+          supabase,
+          user.id,
+          user.email || ""
+        );
+        setProfile({
+          full_name: compatibleProfile.full_name,
+          email: compatibleProfile.email,
+          role: compatibleProfile.role,
+        });
       } catch (error) {
         console.error("Error loading sidebar profile:", error);
       } finally {
@@ -84,7 +87,7 @@ export default function Sidebar() {
 
       <aside className={`${styles.sidebar} ${mobileOpen ? styles.open : ""}`}>
         <div className={styles.logoContainer}>
-          <Link href="/" className={styles.logo}>
+          <Link href="/dashboard" className={styles.logo}>
             <Image 
               src="/geometric_logo.png" 
               alt="BewerbLens Logo" 
@@ -93,6 +96,10 @@ export default function Sidebar() {
               className={styles.logoImage} 
               priority
             />
+            <span className={styles.logoText}>
+              BewerbLens
+              <small className={styles.logoCaption}>Private workspace</small>
+            </span>
           </Link>
         </div>
 
@@ -115,8 +122,8 @@ export default function Sidebar() {
 
         <div className={styles.footer}>
           <Link
-            href="/profile"
-            className={`${styles.userLink} ${isActivePath("/profile") ? styles.active : ""}`}
+            href="/settings"
+            className={`${styles.userLink} ${isActivePath("/settings") ? styles.active : ""}`}
             onClick={handleNavigate}
           >
             <div className={styles.avatar}>
@@ -128,7 +135,9 @@ export default function Sidebar() {
               ) : (
                 <>
                   <p className={styles.userName}>{profile?.full_name || "User"}</p>
-                  <p className={styles.userRole}>{profile?.email}</p>
+                  <p className={styles.userRole}>
+                    {profile?.role === "admin" ? "Admin" : "Member"} · {profile?.email}
+                  </p>
                 </>
                 )}
             </div>

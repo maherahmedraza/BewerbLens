@@ -81,10 +81,39 @@ export interface ConversionFunnel {
   count: number;
 }
 
+export interface SankeyFlowNode {
+  name: string;
+  status: string;
+  depth: number;
+  count: number;
+}
+
+export interface SankeyFlowLink {
+  source: number;
+  target: number;
+  value: number;
+}
+
+export interface StatusFlowSankeySummary {
+  total: number;
+  active: number;
+  applied: number;
+  progressing: number;
+  rejected: number;
+  offers: number;
+}
+
+export interface StatusFlowSankeyData {
+  nodes: SankeyFlowNode[];
+  links: SankeyFlowLink[];
+  summary: StatusFlowSankeySummary;
+}
+
 export interface PipelineConfig {
   retention_days?: number;
   schedule_interval_hours?: number;
   is_paused?: boolean;
+  max_emails_per_run?: number;
 }
 
 export type UserRole = "user" | "admin";

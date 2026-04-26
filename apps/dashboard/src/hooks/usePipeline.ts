@@ -33,7 +33,7 @@ export function usePipelineRuns(limit = 20) {
         const { data } = await api.get(`/runs/history?limit=${limit}`);
         return data as PipelineRun[];
       } catch {
-        // Fallback: query Supabase directly so history/logs stay visible
+        // Fallback: query Supabase directly so history stays visible if the proxy or backend is unavailable.
         const { data, error } = await supabase
           .from('pipeline_runs')
           .select('*')

@@ -1,21 +1,24 @@
 .sidebar {
   position: fixed;
-  left: 0;
-  top: 0;
-  bottom: 0;
+  left: 18px;
+  top: 18px;
+  bottom: 18px;
   width: var(--sidebar-width);
   background-color: var(--bg-sidebar);
-  border-right: 1px solid var(--border-color);
+  border: 1px solid var(--border-color);
+  border-radius: 32px;
   display: flex;
   flex-direction: column;
-  padding: 24px 16px;
+  padding: 22px 18px;
   z-index: 200;
   transition: transform 0.3s ease;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(26px);
 }
 
 .logoContainer {
-  margin-bottom: 40px;
-  padding: 0 12px;
+  margin-bottom: 28px;
+  padding: 0 8px;
 }
 
 .logo {
@@ -25,7 +28,7 @@
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   letter-spacing: -0.03em;
 }
 
@@ -36,32 +39,42 @@
   object-position: center 10%;
   transform: scale(1.6);
   background: white;
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 4px;
   box-shadow: var(--shadow-sm);
 }
 
-.logoIcon {
-  font-size: 24px;
+.logoText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.logoCaption {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .nav {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .navLink {
   text-decoration: none;
   color: var(--text-secondary);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
   transition: all 0.2s ease;
 }
 
@@ -71,8 +84,9 @@
 }
 
 .active {
-  background-color: var(--accent-blue-soft);
+  background: var(--accent-blue-soft);
   color: var(--accent-blue) !important;
+  border: 1px solid var(--accent-blue-soft);
 }
 
 .icon {
@@ -98,11 +112,13 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px;
-  border-radius: 12px;
+  padding: 12px;
+  border-radius: 20px;
   text-decoration: none;
   color: inherit;
   transition: all 0.2s ease;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .userLink:hover {
@@ -110,11 +126,11 @@
 }
 
 .avatar {
-  background-color: var(--accent-blue);
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
   color: white;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -157,6 +173,10 @@
 @media (max-width: 768px) {
   .sidebar {
     transform: translateX(-100%);
+    left: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 0 28px 28px 0;
   }
 
   .sidebar.open {

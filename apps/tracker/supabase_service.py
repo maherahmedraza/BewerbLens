@@ -13,7 +13,7 @@
 # ╚══════════════════════════════════════════════════════════════╝
 
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
 from loguru import logger
@@ -25,6 +25,7 @@ from models import (
     STATUS_PRIORITY,
     ApplicationRecord,
     EmailMetadata,
+    FollowUpReminderItem,
     ProcessingLog,
     RawEmailRecord,
     Status,
@@ -423,9 +424,21 @@ def get_existing_email_ids(client: Client) -> set[str]:
 def get_pipeline_config(client: Client) -> dict:
     try:
         res = client.table("pipeline_config").select("*").eq("id", "00000000-0000-0000-0000-000000000001").execute()
-        return res.data[0] if res.data else {}
+        config = res.data[0] if res.data else {}
+        return {
+            "schedule_interval_hours": 4.0,
+            "retention_days": 30,
+            "is_paused": False,
+            "max_emails_per_run": 250,
+            **config,
+        }
     except Exception:
-        return {}
+        return {
+            "schedule_interval_hours": 4.0,
+            "retention_days": 30,
+            "is_paused": False,
+            "max_emails_per_run": 250,
+        }
 
 
 def get_active_run(client: Client) -> dict | None:
@@ -441,3 +454,101 @@ def get_active_run(client: Client) -> dict | None:
         return res.data[0] if res.data else None
     except Exception:
         return None
+
+
+def cleanup_pipeline_logs(client: Client, retention_days: int) -> int:
+    cutoff = (_utcnow() - timedelta(days=retention_days)).isoformat()
+    try:
+        result = client.table("pipeline_run_logs").delete().lt("created_at", cutoff).execute()
+        return len(result.data or [])
+    except Exception as error:
+        logger.warning(f"Failed to clean pipeline_run_logs: {error}")
+        return 0
+
+
+def cleanup_usage_metrics(client: Client, retention_days: int) -> int:
+    cutoff = (_utcnow() - timedelta(days=retention_days)).date().isoformat()
+    try:
+        result = client.table("usage_metrics").delete().lt("recorded_for", cutoff).execute()
+        return len(result.data or [])
+    except Exception as error:
+        logger.warning(f"Failed to clean usage_metrics: {error}")
+        return 0
+
+
+def get_telegram_enabled_users(client: Client) -> list[dict]:
+    try:
+        result = (
+            client.table("user_profiles")
+            .select("id, email, telegram_enabled, telegram_chat_id")
+            .eq("telegram_enabled", True)
+            .execute()
+        )
+        return [user for user in (result.data or []) if user.get("telegram_chat_id")]
+    except Exception as error:
+        logger.warning(f"Failed to load Telegram-enabled users: {error}")
+        return []
+
+
+def get_due_follow_up_applications(
+    client: Client,
+    user_id: str,
+    reminder_after_days: int,
+    repeat_interval_days: int,
+) -> list[FollowUpReminderItem]:
+    due_before = (_utcnow() - timedelta(days=reminder_after_days)).date().isoformat()
+    reminder_before = _utcnow() - timedelta(days=repeat_interval_days)
+
+    try:
+        result = (
+            client.table("applications")
+            .select("id, company_name, job_title, date_applied, status, last_follow_up_reminder_at")
+            .eq("user_id", user_id)
+            .eq("status", Status.APPLIED.value)
+            .lt("date_applied", due_before)
+            .order("date_applied")
+            .execute()
+        )
+    except Exception as error:
+        logger.warning(f"Failed to load follow-up reminders for user {user_id}: {error}")
+        return []
+
+    reminders: list[FollowUpReminderItem] = []
+    for row in result.data or []:
+        last_sent_raw = row.get("last_follow_up_reminder_at")
+        if last_sent_raw:
+            try:
+                last_sent = datetime.fromisoformat(last_sent_raw.replace("Z", "+00:00"))
+            except ValueError:
+                last_sent = None
+            if last_sent and last_sent >= reminder_before:
+                continue
+
+        reminders.append(
+            FollowUpReminderItem(
+                application_id=row["id"],
+                company_name=row.get("company_name") or "Unknown",
+                job_title=row.get("job_title") or "Not Specified",
+                date_applied=date.fromisoformat(row["date_applied"]),
+                status=row.get("status") or Status.APPLIED.value,
+            )
+        )
+
+    return reminders
+
+
+def mark_follow_up_reminders_sent(client: Client, application_ids: list[str]) -> int:
+    if not application_ids:
+        return 0
+
+    try:
+        result = (
+            client.table("applications")
+            .update({"last_follow_up_reminder_at": _utcnow().isoformat()})
+            .in_("id", application_ids)
+            .execute()
+        )
+        return len(result.data or [])
+    except Exception as error:
+        logger.warning(f"Failed to mark follow-up reminders sent: {error}")
+        return 0

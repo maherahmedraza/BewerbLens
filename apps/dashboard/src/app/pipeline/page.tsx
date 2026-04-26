@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import PipelineMonitor from "./components/PipelineMonitor";
 import ExecutionHistory from "./components/ExecutionHistory";
-import ConfigPanel from "./components/ConfigPanel";
+
 import LogDetailDrawer from "./components/LogDetailDrawer";
 import styles from "./page.module.css";
 import type { PipelineRun } from "@/lib/types";
@@ -45,9 +45,17 @@ export default function PipelinePage() {
           </section>
         </div>
 
-        {/* Right Column: Configuration */}
+        {/* Right Column: Configuration Shortcut */}
         <aside className={styles.sidebar}>
-          <ConfigPanel />
+          <div className={styles.shortcutCard}>
+            <h3 className={styles.shortcutTitle}>Pipeline Configuration</h3>
+            <p className={styles.shortcutDesc}>
+              Settings have been consolidated. Manage your pipeline sync intervals, backfill fairness caps, and retention limits in the global Workspace Settings.
+            </p>
+            <a href="/settings#sync-controls" className={styles.shortcutButton}>
+              Go to Settings
+            </a>
+          </div>
         </aside>
       </div>
 

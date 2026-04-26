@@ -60,6 +60,48 @@
   gap: 1.5rem;
 }
 
+.shortcutCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.shortcutTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.shortcutDesc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.shortcutButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s;
+  border: 1px solid var(--border-light);
+  margin-top: 0.5rem;
+}
+
+.shortcutButton:hover {
+  background-color: var(--border-color);
+}
+
 .skeleton {
   width: 100%;
   height: 200px;

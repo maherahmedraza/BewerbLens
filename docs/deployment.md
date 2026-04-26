@@ -15,6 +15,8 @@ Create a `.env` file in the root directory based on `.env.example`. Required key
 - `GEMINI_MODEL` (default: `gemini-3.1-flash-lite-preview`)
 
 **Dashboard server routes**
+- `ORCHESTRATOR_API_KEY`
+- `ORCHESTRATOR_URL` (optional server-only override; useful with Docker Compose)
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_OAUTH_REDIRECT_URI`
@@ -29,6 +31,8 @@ Create a `.env` file in the root directory based on `.env.example`. Required key
 **Telegram** (optional, per-user settings stored in Supabase take precedence)
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
+- `FOLLOW_UP_REMINDER_DAYS` (default: `14`)
+- `FOLLOW_UP_REMINDER_REPEAT_DAYS` (default: `7`)
 
 **Dashboard**
 - `NEXT_PUBLIC_SUPABASE_URL`
@@ -53,6 +57,7 @@ psql "$DATABASE_URL" -f db/migrations/009_reset_for_reprocessing.sql
 psql "$DATABASE_URL" -f db/migrations/010_sync_integrations_analytics.sql
 psql "$DATABASE_URL" -f db/migrations/011_fix_admin_role_policy_function.sql
 psql "$DATABASE_URL" -f db/migrations/012_platform_allowlist_gmail_legacy_and_locations.sql
+psql "$DATABASE_URL" -f db/migrations/013_pipeline_controls_and_followups.sql
 ```
 
 Alternatively, paste each file into the Supabase **SQL Editor** and click **Run**.
@@ -68,6 +73,19 @@ cd apps/orchestrator
 python main.py                      # FastAPI on port 8000
 ```
 The API will be available at `http://localhost:8000`. The worker thread and scheduler start automatically.
+
+> The orchestrator now requires `ORCHESTRATOR_API_KEY` for `/runs/*` and `/config/*`. The dashboard sends this secret from server-side route handlers; browser code should not call the FastAPI service directly.
+
+### Full-stack local stack with Docker Compose
+```bash
+docker compose up --build
+```
+
+This starts:
+- `backend` on `http://localhost:8000`
+- `dashboard` on `http://localhost:3000`
+
+The dashboard service uses `ORCHESTRATOR_URL=http://backend:8000` internally while the browser still talks to the same-origin Next.js proxy.
 
 ### Frontend (Dashboard)
 ```bash
@@ -102,6 +120,7 @@ The `next.config.ts` automatically loads environment variables from the root `.e
    | `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key |
    | `NEXT_PUBLIC_ORCHESTRATOR_URL` | Your DigitalOcean app URL |
+   | `ORCHESTRATOR_API_KEY` | Shared secret used by the dashboard's server-side orchestrator proxy |
    | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
    | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
    | `GOOGLE_OAUTH_REDIRECT_URI` | Usually `https://<your-app>/api/integrations/google/callback` |
@@ -130,7 +149,10 @@ The `next.config.ts` automatically loads environment variables from the root `.e
     | `GEMINI_API_KEY` | Secret |
     | `ENCRYPTION_SECRET` | Secret |
     | `ENCRYPTION_KEY` | Secret (legacy fallback) |
-    | `GEMINI_MODEL` | `gemini-3.1-flash-lite-preview` |
+    | `ORCHESTRATOR_API_KEY` | Secret |
+    | `FOLLOW_UP_REMINDER_DAYS` | `14` |
+    | `FOLLOW_UP_REMINDER_REPEAT_DAYS` | `7` |
+     | `GEMINI_MODEL` | `gemini-3.1-flash-lite-preview` |
     | `BATCH_SIZE` | `50` |
     | `MIN_CONFIDENCE` | `0.55` |
     | `GMAIL_DAILY_QUOTA_UNITS` | `1000000000` |
@@ -142,13 +164,15 @@ The app spec is also defined in `.do/app.yaml` for declarative configuration.
 
 ### 2.3 CI/CD Pipeline
 
-Three GitHub Actions workflows automate CI and deployment:
+Four GitHub Actions workflows automate CI and deployment:
 
 | Workflow | File | Trigger | Purpose |
 |---|---|---|---|
-| **CI** | `ci.yml` | Every push & PR | Lint, test, build (reusable) |
+| **CI** | `ci.yml` | Every push & PR to `main` and `dev` | Lint, test, build (reusable) |
+| **Deploy Frontend Preview** | `deploy-preview.yml` | Push to `dev` (dashboard changes) | Vercel preview deploy |
 | **Deploy Frontend** | `deploy.yml` | Push to `main` (dashboard changes) | Vercel production deploy |
 | **Deploy Backend** | `deploy-backend.yml` | Push to `main` (backend changes) | DigitalOcean container deploy |
+| **Deploy Backend Preview** | `deploy-backend-preview.yml` | Push to `dev` (backend changes) | DigitalOcean preview container deploy |
 
 #### Required GitHub Secrets
 
@@ -159,13 +183,17 @@ Three GitHub Actions workflows automate CI and deployment:
 | `VERCEL_PROJECT_ID` | `.vercel/project.json` after `npx vercel link` | Identifies the project |
 | `DIGITALOCEAN_ACCESS_TOKEN` | [DO API → Tokens](https://cloud.digitalocean.com/account/api/tokens) | doctl authentication |
 | `DIGITALOCEAN_APP_ID` | DO dashboard URL after app creation | Target app for deployment |
+| `DIGITALOCEAN_DEV_APP_ID` | DO dashboard URL after preview app creation | Target preview backend app for `dev` deployments |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project settings | CI build env var |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project settings | CI build env var |
 | `NEXT_PUBLIC_ORCHESTRATOR_URL` | DigitalOcean app URL | CI build env var |
 
 #### Deploy Flow
 
-```
+```text
+git push to dev
+    └── CI → Deploy Frontend Preview (Vercel preview URL) → Deploy Backend Preview (if DIGITALOCEAN_DEV_APP_ID is set)
+
 git push to main
     │
     ├── CI (ci.yml) runs first
@@ -180,13 +208,15 @@ git push to main
         └── doctl apps create-deployment <APP_ID> --wait
 ```
 
+> **Note:** Preview backend deployment is opt-in. Create a second DigitalOcean app from `.do/app.dev.yaml`, store its ID in `DIGITALOCEAN_DEV_APP_ID`, and keep its secrets isolated from production.
+
 ---
 
 ## 3. Post-Deployment Verification
 
 1. **Backend health**: `GET https://<your-do-app>.ondigitalocean.app/health`
    - Expect: `{"status": "ok", "worker": "active", "scheduler": true}`
-2. **Frontend**: Visit your Vercel URL → Login → Connect Gmail from the **Profile** page.
+2. **Frontend**: Visit your Vercel URL → Login → Connect Gmail from the **Settings** page.
 3. **First backfill**: Open **Settings** and queue a backfill run so the user OAuth token is exercised and the pipeline processes read + unread candidate emails.
 4. **Scheduler verification**: Confirm the backend reports `"scheduler": true` on `/health`, then wait for the configured interval or trigger a manual run from the dashboard.
-5. **Telegram**: Generate a link code in the Profile page, complete the bot handshake, and verify you receive a consolidated run summary after the pipeline completes.
+5. **Telegram**: Generate a link code in the **Settings** page under Integrations, complete the bot handshake, verify you receive a consolidated run summary after the pipeline completes, and check again after 14+ days to confirm follow-up reminders work for stale `Applied` entries.

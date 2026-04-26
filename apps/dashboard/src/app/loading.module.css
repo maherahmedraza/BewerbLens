@@ -1,0 +1,9 @@
+.shell {
+  min-height: calc(100vh - 160px);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

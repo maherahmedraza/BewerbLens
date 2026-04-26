@@ -1,0 +1,63 @@
+.shell {
+  min-height: calc(100vh - 160px);
+  display: grid;
+  place-items: center;
+}
+
+.card {
+  width: min(540px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 32px;
+  border: 1px solid var(--border-color);
+  border-radius: calc(var(--radius) + 8px);
+  background:
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.12), transparent 38%),
+    var(--bg-card);
+  box-shadow: var(--shadow-md);
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  color: var(--text-primary);
+}
+
+.description {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.button {
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 12px 18px;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.buttonPrimary {
+  background: var(--accent-blue);
+  border-color: transparent;
+  color: white;
+}

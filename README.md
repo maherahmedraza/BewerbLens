@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/maherahmedraza/BewerbLens/actions/workflows/ci.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/ci.yml)
 [![Deploy Frontend](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy.yml)
+[![Deploy Frontend Preview](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-preview.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-preview.yml)
 [![Deploy Backend](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-backend.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-backend.yml)
 
 ---
@@ -28,7 +29,8 @@ graph TB
     subgraph "GitHub"
         GH[Repository]
         CI[CI Pipeline<br/>lint + build + test]
-        DF[Deploy Frontend]
+        DFP[Deploy Frontend Preview]
+        DFR[Deploy Frontend]
         DB_DEPLOY[Deploy Backend]
     end
 
@@ -54,10 +56,12 @@ graph TB
         TG[Telegram Bot]
     end
 
-    GH -->|push to main| CI
-    CI -->|on success| DF
-    CI -->|on success| DB_DEPLOY
-    DF --> DASH
+    GH -->|push to dev/main| CI
+    CI -->|dev success| DFP
+    CI -->|main success| DFR
+    CI -->|main backend success| DB_DEPLOY
+    DFP --> DASH
+    DFR --> DASH
     DB_DEPLOY --> ORCH
 
     DASH -->|API calls| ORCH
@@ -91,6 +95,7 @@ graph TB
 ### System Orchestration
 - **Real-time Monitoring** — Granular stage-level progress (Ingestion → Analysis → Persistence) shown live via Supabase Realtime.
 - **Smart Scheduling** — Configurable interval (1 h – 24 h) stored in `pipeline_config`; dynamically updated without restart.
+- **Backfill Fairness Cap** — Large inbox backfills are automatically chunked with `max_emails_per_run` so one user cannot monopolize the single worker.
 - **Pause / Resume** — Toggle the scheduler on/off from the dashboard without touching the server.
 - **Run Controls** — Stop an active run, resume a failed/cancelled run, or rerun ingestion/analysis/persistence from the UI.
 - **Manual Triggers** — Start a sync or backfill on-demand via the UI or API; returns immediately while execution continues asynchronously.
@@ -105,10 +110,12 @@ graph TB
 - **Status Priority** — Terminal states (Offer, Rejected) are never overwritten by later lower-priority emails.
 - **Zombie Detection** — Scheduler runs `HeartbeatMonitor` every 5 minutes to detect and kill stale runs.
 - **Consolidated Telegram Reports** — End-of-run summary report instead of per-job spam notifications.
+- **Follow-up Reminders** — Daily scheduler job nudges Telegram-linked users about older `Applied` applications that still deserve a follow-up.
 - **Retry & Graceful Degradation** — Exponential-backoff retries; partial successes are saved rather than discarded.
 
 ### Premium Dashboard
 - **Pipeline View** — Stage-by-stage progress bars, execution history table, config panel (pause, interval, retention), and per-run log drawer.
+- **Operational Guardrails** — Error boundary, shared loading states, accessible charts, and CSV export tuned for spreadsheet consumers.
 - **Analytics Hub** — Interactive charts for application trends plus operational usage telemetry for Gmail, Gemini, Telegram, and sync health.
 - **Secure Integrations** — Gmail OAuth and Telegram linking happen through server-side route handlers so tokens and chat IDs never need to live in client state.
 - **Spreadsheet Export** — Applications can be exported as CSV for Excel and Google Sheets.
@@ -126,6 +133,7 @@ BewerbLens/
 │   ├── copilot-instructions.md       # Repo assistant guidance
 │   └── workflows/
 │       ├── ci.yml                    # Lint, test, build (reusable)
+│       ├── deploy-preview.yml        # Frontend preview → Vercel (dev)
 │       ├── deploy.yml                # Frontend → Vercel
 │       └── deploy-backend.yml        # Backend → DigitalOcean
 ├── apps/
@@ -186,6 +194,8 @@ psql "$DATABASE_URL" -f db/migrations/008_fix_pipeline_runs_constraints.sql
 psql "$DATABASE_URL" -f db/migrations/009_reset_for_reprocessing.sql
 psql "$DATABASE_URL" -f db/migrations/010_sync_integrations_analytics.sql
 psql "$DATABASE_URL" -f db/migrations/011_fix_admin_role_policy_function.sql
+psql "$DATABASE_URL" -f db/migrations/012_platform_allowlist_gmail_legacy_and_locations.sql
+psql "$DATABASE_URL" -f db/migrations/013_pipeline_controls_and_followups.sql
 ```
 
 ### 4. Start Backend Services
@@ -204,10 +214,30 @@ Visit `http://localhost:3000` to access the dashboard.
 
 ### 6. Connect Gmail and run the first pipeline
 
-1. Sign in to the dashboard and open **Profile**.
+1. Sign in to the dashboard and open **Settings**.
 2. Click **Connect Gmail** to authorize Gmail with OAuth. Users do **not** paste Gmail API keys into the app.
 3. Open **Settings** and queue a **Backfill** run. This broad-discovery pass fetches read and unread candidate emails, then lets Gemini decide job relevance.
 4. Open **Applications** to review results or export them as CSV for Excel / Google Sheets.
+
+---
+
+## Branching & Release Flow
+
+BewerbLens now uses a strict two-branch flow:
+
+| Branch | Purpose | Deploy behavior |
+|---|---|---|
+| `dev` | Integration and QA branch | Runs CI and deploys a Vercel preview build |
+| `main` | Production-only branch | Runs CI and deploys production frontend/backend |
+
+Recommended workflow:
+
+1. Commit all active work to `dev`.
+2. Validate the Vercel preview URL generated from `dev`.
+3. If you created a preview backend app, validate the DigitalOcean preview deployment triggered by `deploy-backend-preview.yml`.
+4. Merge `dev` into `main` only when the change is production-ready.
+
+**Note:** backend preview isolation is now supported with a second DigitalOcean app. Use `.do/app.dev.yaml` plus the `DIGITALOCEAN_DEV_APP_ID` secret to keep `dev` traffic away from production.
 
 ---
 
@@ -224,13 +254,12 @@ BewerbLens uses a hybrid cloud architecture for cost-effective production hostin
 
 ### CI/CD Pipeline
 
-```
-git push → CI (lint + build + test + security scan)
-                ├── Frontend: Vercel production deploy
-                └── Backend: DigitalOcean container deploy
+```text
+git push dev  → CI → Vercel preview deploy
+git push main → CI → Vercel production deploy + DigitalOcean backend deploy
 ```
 
-All workflows use **path filtering** — frontend deploys only trigger when `apps/dashboard/**` changes, backend deploys only trigger when `apps/tracker/**` or `apps/orchestrator/**` changes. Recurring incremental syncs are handled by the orchestrator scheduler itself rather than a separate GitHub Actions cron workflow.
+All workflows use **path filtering** — preview and production frontend deploys only trigger when `apps/dashboard/**` changes, backend deploys only trigger when `apps/tracker/**` or `apps/orchestrator/**` changes. Recurring incremental syncs are handled by the orchestrator scheduler itself rather than a separate GitHub Actions cron workflow.
 
 See [docs/deployment.md](docs/deployment.md) for full setup instructions.
 

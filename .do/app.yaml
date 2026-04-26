@@ -42,6 +42,18 @@ services:
       - key: ENCRYPTION_KEY
         scope: RUN_TIME
         type: SECRET
+      - key: ENCRYPTION_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: ORCHESTRATOR_API_KEY
+        scope: RUN_TIME
+        type: SECRET
       - key: TELEGRAM_ENABLED
         scope: RUN_TIME
-        value: "false"
+        value: "true"
+      - key: FOLLOW_UP_REMINDER_DAYS
+        scope: RUN_TIME
+        value: "14"
+      - key: FOLLOW_UP_REMINDER_REPEAT_DAYS
+        scope: RUN_TIME
+        value: "7"

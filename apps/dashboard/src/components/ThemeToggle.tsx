@@ -3,14 +3,20 @@
 import { useTheme } from "next-themes";
 import { SunIcon, MoonIcon } from "@heroicons/react/24/outline";
 
-export function ThemeToggle() {
+interface ThemeToggleProps {
+  className?: string;
+}
+
+export function ThemeToggle({ className }: ThemeToggleProps) {
   const { setTheme, resolvedTheme } = useTheme();
   const isDark = (resolvedTheme || "light") === "dark";
 
   return (
     <button
+      type="button"
       onClick={() => setTheme(isDark ? "light" : "dark")}
       title={`Switch to ${isDark ? "light" : "dark"} theme`}
+      className={className}
       style={{
         width: 40, height: 40,
         background: "transparent",

@@ -381,6 +381,15 @@ NEXT_PUBLIC_ORCHESTRATOR_URL   — set on Vercel (DigitalOcean app URL)
 
 `next.config.ts` uses dual-mode env loading: `dotenv` locally, platform injection on Vercel/CI. Do not change this pattern.
 
+### 8.8 Current Dashboard Information Architecture
+
+- `/` is the public landing page.
+- `/login` is public.
+- `/dashboard` is the authenticated operational overview.
+- `/analytics` is the single chart-heavy analytics hub.
+- `/settings` is the primary workspace for account details, integrations, filters, sync controls, export, and destructive actions.
+- `/profile` should not evolve as a second settings surface; redirect it to `/settings` instead of duplicating account-management UI.
+
 ---
 
 ## 9. CI/CD & Deployment Conventions
@@ -390,13 +399,23 @@ NEXT_PUBLIC_ORCHESTRATOR_URL   — set on Vercel (DigitalOcean app URL)
 | Workflow | File | Trigger | Path filter |
 |---|---|---|---|
 | CI | `ci.yml` | Every push + PR | None (runs always) |
+| Deploy Frontend Preview | `deploy-preview.yml` | Push to `dev` | `apps/dashboard/**` |
 | Deploy Frontend | `deploy.yml` | Push to `main` | `apps/dashboard/**` |
 | Deploy Backend | `deploy-backend.yml` | Push to `main` | `apps/tracker/**` or `apps/orchestrator/**` |
 | Pipeline Cron | `pipeline-trigger.yml` | Schedule (every 4h) + `workflow_dispatch` | None |
 
 Do not remove path filters — they prevent redundant deploys when only one app changes.
 
-### 9.2 Required GitHub Secrets
+### 9.2 Branch Strategy
+
+The repository workflow is intentionally two-branch:
+
+- `dev` = integration, QA, and preview deployments
+- `main` = production-only branch used by Vercel production, DigitalOcean production, and the main release workflows
+
+CI should run on both `dev` and `main`. Production deploys stay pinned to `main`. Preview deploys belong on `dev`; do not repoint production workflows at `dev`.
+
+### 9.3 Required GitHub Secrets
 
 ```
 # Vercel
@@ -421,11 +440,11 @@ PIPELINE_USER_ID
 
 Never add secrets as plain text in workflow YAML files. Always use `${{ secrets.SECRET_NAME }}`.
 
-### 9.3 Python Dependency Changes
+### 9.4 Python Dependency Changes
 
 If you add, remove, or upgrade a Python package, update **only** the root `requirements.txt`. Do not update `apps/tracker/pyproject.toml` only — Docker and CI use the root file. Both files must be kept in sync if `pyproject.toml` is also maintained.
 
-### 9.4 DigitalOcean App Spec
+### 9.5 DigitalOcean App Spec
 
 `.do/app.yaml` is the declarative spec for the DigitalOcean backend. If the container port, run command, resource size, or env var names change, update this file alongside the orchestrator code.
 
@@ -455,6 +474,10 @@ These are the most common mistakes to avoid. Each one has caused a real bug or a
 
 | ❌ Anti-pattern | ✅ Correct approach |
 |---|---|
+| Treating `/profile` and `/settings` as two independent settings products | Keep `/settings` as the single workspace and redirect `/profile` |
+| Packing Sankey/funnel/monthly charts into `/dashboard` and `/analytics` simultaneously | Keep `/dashboard` operational and `/analytics` as the dedicated analytics hub |
+| Running CI only on `main` while using `dev` as the shared test branch | Run CI on both `dev` and `main` |
+| Expecting Telegram delivery while `TELEGRAM_ENABLED` is false in runtime config | Keep Telegram enabled in backend runtime when bot delivery is intended |
 | Using `pipeline_runs.run_id` (text) as a FK | Use `pipeline_runs.id` (UUID) |
 | Referencing `sync_interval_minutes` | Use `schedule_interval_hours` (float) |
 | Writing `middleware.ts` in the dashboard | Use the existing `src/proxy.ts` |

@@ -1,15 +1,15 @@
 :root {
-  --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
-  --bg-card: #ffffff;
-  --bg-hover: #f1f5f9;
-  --bg-sidebar: #ffffff;
+  --bg-primary: #eef2ff;
+  --bg-secondary: rgba(255, 255, 255, 0.8);
+  --bg-card: rgba(255, 255, 255, 0.82);
+  --bg-hover: #f8fafc;
+  --bg-sidebar: rgba(255, 255, 255, 0.7);
   
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #94a3b8;
   
-  --border-color: #e2e8f0;
+  --border-color: rgba(226, 232, 240, 0.92);
   --accent-blue: #3b82f6;
   --accent-blue-soft: #eff6ff;
   --accent-red: #ef4444;
@@ -21,85 +21,118 @@
   --accent-purple: #a855f7;
   --accent-purple-soft: #faf5ff;
   
-  --radius: 16px;
-  --radius-sm: 8px;
-  --sidebar-width: 260px;
-  --header-height: 72px;
+  --radius: 24px;
+  --radius-sm: 12px;
+  --sidebar-width: 280px;
+  --header-height: 84px;
   
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 10px 30px rgba(148, 163, 184, 0.08);
+  --shadow: 0 20px 50px rgba(148, 163, 184, 0.12);
+  --shadow-md: 0 26px 70px rgba(148, 163, 184, 0.18);
+  --shadow-lg: 0 35px 90px rgba(15, 23, 42, 0.12);
 
-  --font-sans: var(--font-geist-sans), sans-serif;
-  --font-mono: var(--font-geist-mono), monospace;
+  --font-sans: var(--font-body-sans), sans-serif;
+  --font-display: var(--font-display-serif), serif;
+  --font-mono: var(--font-body-mono), monospace;
   
-  /* Modern SaaS Chart Colors */
+  /* Modern SaaS Chart Colors - Semantic */
+  --chart-submitted: #ec4899;
+  --chart-submitted-soft: rgba(236, 72, 153, 0.15);
   --chart-applied: #6366f1;
-  --chart-applied-light: #818cf8;
+  --chart-applied-soft: rgba(99, 102, 241, 0.15);
   --chart-rejected: #f43f5e;
-  --chart-rejected-light: #fb7185;
+  --chart-rejected-soft: rgba(244, 63, 94, 0.15);
   --chart-positive: #10b981;
-  --chart-positive-light: #34d399;
+  --chart-positive-soft: rgba(16, 185, 129, 0.15);
   --chart-interview: #a855f7;
+  --chart-interview-soft: rgba(168, 85, 247, 0.15);
   --chart-offer: #f59e0b;
+  --chart-offer-soft: rgba(245, 158, 11, 0.15);
   
   --chart-grid: #e2e8f0;
   --chart-axis: #94a3b8;
 }
 
 .dark {
-  --bg-primary: #020617;
-  --bg-secondary: #0f172a;
-  --bg-card: #1e293b;
-  --bg-hover: #334155;
-  --bg-sidebar: #0f172a;
+  --bg-primary: #000000;
+  --bg-secondary: #0a0a0a;
+  --bg-card: #111111;
+  --bg-hover: #1a1a1a;
+  --bg-sidebar: #050505;
   
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #52525b;
   
-  --border-color: #1e293b;
-  --accent-blue: #60a5fa;
-  --accent-blue-soft: rgba(96, 165, 250, 0.1);
-  --accent-red: #f87171;
-  --accent-red-soft: rgba(248, 113, 113, 0.1);
-  --accent-green: #4ade80;
-  --accent-green-soft: rgba(74, 222, 128, 0.1);
+  --border-color: #27272a;
+  --accent-blue: #f59e0b; 
+  --accent-blue-soft: rgba(245, 158, 11, 0.1);
+  --accent-red: #f43f5e;
+  --accent-red-soft: rgba(244, 63, 94, 0.1);
+  --accent-green: #10b981;
+  --accent-green-soft: rgba(16, 185, 129, 0.1);
   
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.5);
+  --shadow-sm: 0 10px 30px rgba(0, 0, 0, 0.8);
+  --shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
   
-  --accent-orange: #f59e0b;
-  --accent-orange-soft: rgba(245, 158, 11, 0.15);
-  --accent-purple: #a855f7;
-  --accent-purple-soft: rgba(168, 85, 247, 0.15);
+  --accent-orange: #fb923c;
+  --accent-orange-soft: rgba(251, 146, 60, 0.15);
+  --accent-purple: #c084fc;
+  --accent-purple-soft: rgba(192, 132, 252, 0.15);
 
-  --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.2);
-  --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.15);
+  --shadow-md: 0 28px 80px rgba(0, 0, 0, 0.95);
+  --shadow-lg: 0 40px 100px rgba(0, 0, 0, 1);
 
-  --chart-grid: #1e293b;
-  --chart-axis: #475569;
+  --chart-grid: #18181b;
+  --chart-axis: #3f3f46;
+
+  /* Chart Semantic Colors - Unique for each category */
+  --chart-submitted: #ffffff;
+  --chart-submitted-soft: rgba(255, 255, 255, 0.15);
+  --chart-applied: #f59e0b;
+  --chart-applied-soft: rgba(245, 158, 11, 0.15);
+  --chart-rejected: #f43f5e;
+  --chart-rejected-soft: rgba(244, 63, 94, 0.15);
+  --chart-positive: #10b981;
+  --chart-positive-soft: rgba(16, 185, 129, 0.15);
+  --chart-interview: #a855f7;
+  --chart-interview-soft: rgba(168, 85, 247, 0.15);
+  --chart-offer: #fb923c;
+  --chart-offer-soft: rgba(251, 146, 60, 0.15);
 }
 
 * {
   box-sizing: border-box;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(circle at top left, var(--bg-accent-1, rgba(245, 158, 11, 0.04)), transparent 45%),
+    radial-gradient(circle at bottom right, var(--bg-accent-2, rgba(255, 255, 255, 0.02)), transparent 45%);
   color: var(--text-primary);
   font-family: var(--font-sans);
   margin: 0;
-  display: flex;
   min-height: 100vh;
+}
+
+:root {
+  --bg-accent-1: rgba(99, 102, 241, 0.08);
+  --bg-accent-2: rgba(236, 72, 153, 0.05);
+}
+
+.dark {
+  --bg-accent-1: rgba(245, 158, 11, 0.06);
+  --bg-accent-2: rgba(255, 255, 255, 0.03);
 }
 
 /* Layout Shell */
 .app-container {
   display: flex;
   width: 100%;
+  min-height: 100vh;
 }
 
 .main-content {
@@ -112,10 +145,14 @@ body {
 }
 
 .page-container {
-  padding: 32px;
+  padding: 24px 28px 32px;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+}
+
+.public-app {
+  min-height: 100vh;
 }
 
 /* Typography */
@@ -123,6 +160,7 @@ h1, h2, h3, h4 {
   margin-top: 0;
   font-weight: 700;
   letter-spacing: -0.02em;
+  font-family: var(--font-display);
 }
 
 .heading {

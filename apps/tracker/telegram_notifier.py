@@ -17,7 +17,7 @@ from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 from config import settings
-from models import NotificationAction, PipelineRunReport
+from models import FollowUpReminderItem, NotificationAction, PipelineRunReport
 
 STATUS_EMOJI: dict[str, str] = {
     "Applied": "📝",
@@ -148,7 +148,7 @@ def send_run_report_for_user(user: dict, report: PipelineRunReport) -> tuple[boo
     if not settings.telegram_enabled or not user.get("telegram_enabled"):
         return False, None
 
-    bot_token = user.get("telegram_bot_token") or settings.telegram_bot_token
+    bot_token = settings.telegram_bot_token
     chat_id = user.get("telegram_chat_id") or settings.telegram_chat_id
 
     if not bot_token or not chat_id:
@@ -171,6 +171,67 @@ def send_run_report_for_user(user: dict, report: PipelineRunReport) -> tuple[boo
         )
         return False, error_message
 
+
+def _build_follow_up_message(reminders: list[FollowUpReminderItem], reminder_days: int) -> str:
+    lines = [
+        "⏰ *Follow-up opportunities*",
+        "━━━━━━━━━━━━━━━━━━━━━━━━",
+        "",
+        (
+            f"You still have {_escape_md(str(len(reminders)))} application(s) in *Applied* for at least "
+            f"{_escape_md(str(reminder_days))} days."
+        ),
+        "",
+    ]
+
+    for reminder in reminders[:8]:
+        lines.append(
+            "• "
+            f"*{_escape_md(reminder.company_name)}* — {_escape_md(reminder.job_title)} "
+            f"({reminder.date_applied.isoformat()})"
+        )
+
+    if len(reminders) > 8:
+        lines.append("")
+        lines.append(f"_...and {len(reminders) - 8} more awaiting a follow-up._")
+
+    lines.append("")
+    lines.append("Tip: send a short status check-in or update your tracker if you heard back outside Gmail.")
+    return "\n".join(lines)
+
+
+def send_follow_up_reminder_for_user(
+    user: dict,
+    reminders: list[FollowUpReminderItem],
+    reminder_days: int,
+) -> tuple[bool, str | None]:
+    if not settings.telegram_enabled or not user.get("telegram_enabled") or not reminders:
+        return False, None
+
+    bot_token = settings.telegram_bot_token
+    chat_id = user.get("telegram_chat_id") or settings.telegram_chat_id
+    if not bot_token or not chat_id:
+        error_message = "Telegram follow-up reminder skipped: bot_token or chat_id is missing"
+        logger.warning(error_message)
+        return False, error_message
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": _build_follow_up_message(reminders, reminder_days),
+        "parse_mode": "Markdown",
+    }
+
+    try:
+        _post_to_telegram(url, payload)
+        logger.bind(chat_id=_mask_chat_id(str(chat_id))).info("Follow-up reminder sent")
+        return True, None
+    except Exception as error:
+        error_message = _extract_telegram_error(error)
+        logger.bind(chat_id=_mask_chat_id(str(chat_id)), error=error_message).error(
+            "Failed to send follow-up reminder"
+        )
+        return False, error_message
 
 def verify_telegram_connection(chat_id: str, bot_token: str) -> bool:
     if not chat_id:

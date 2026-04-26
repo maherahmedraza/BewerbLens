@@ -1,13 +1,20 @@
 import {
   buildMonthlyApplications,
   buildPlatformBreakdown,
+  buildStatusFlowSankey,
   getApplicationsForCurrentUser,
 } from "@/lib/server/applications";
 import { createClient } from "@/lib/supabase/server";
-import type { ConversionFunnel, TopCompany, LocationBreakdown } from "@/lib/types";
+import type { ApplicationStats, ConversionFunnel, TopCompany, LocationBreakdown } from "@/lib/types";
 import AnalyticsChartsClient from "./AnalyticsChartsClient";
 import UsageAnalyticsClient from "./UsageAnalyticsClient";
 import styles from "./page.module.css";
+
+async function getStats(): Promise<ApplicationStats | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("application_stats").select("*").single();
+  return (data as ApplicationStats | null) ?? null;
+}
 
 async function getFunnelData(): Promise<ConversionFunnel[]> {
   const supabase = await createClient();
@@ -50,27 +57,68 @@ async function getLocations(): Promise<LocationBreakdown[]> {
 }
 
 export default async function AnalyticsPage() {
-  const [applications, funnelData, companies, locations] =
+  const [applications, stats, funnelData, companies, locations] =
     await Promise.all([
       getApplicationsForCurrentUser(),
+      getStats(),
       getFunnelData(),
       getTopCompanies(),
       getLocations(),
     ]);
   const monthlyData = buildMonthlyApplications(applications);
   const platformData = buildPlatformBreakdown(applications);
+  const sankeyData = buildStatusFlowSankey(applications);
+  const activePipeline =
+    (stats?.applied || 0) + (stats?.positive_response || 0) + (stats?.interview || 0);
+  const insightCards = [
+    {
+      label: "Tracked applications",
+      value: stats?.total_applications || 0,
+      note: "Full corpus visible in your private workspace",
+    },
+    {
+      label: "Active pipeline",
+      value: activePipeline,
+      note: "Still moving through response and interview stages",
+    },
+    {
+      label: "Response rate",
+      value: `${stats?.response_rate_pct ?? 0}%`,
+      note: "Share of applications with positive progression",
+    },
+    {
+      label: "Pipeline success",
+      value: `${stats?.success_rate_pct ?? 0}%`,
+      note: "Successful persistence outcomes across tracked activity",
+    },
+  ];
 
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h1 className="heading">Analytics</h1>
-        <p className="subheading">Deep dive into your application performance, platform trends, and geographic breakdown.</p>
+        <span className={styles.eyebrow}>Insight studio</span>
+        <h1 className="heading">Every meaningful trend, flow, and cost signal in one analytics hub.</h1>
+        <p className="subheading">
+          Explore application momentum, platform concentration, status transitions, operational workload,
+          and geographic spread without splitting context across multiple pages.
+        </p>
       </header>
+
+      <section className={styles.summaryGrid}>
+        {insightCards.map((card) => (
+          <article key={card.label} className={styles.summaryCard}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+            <p>{card.note}</p>
+          </article>
+        ))}
+      </section>
 
       <AnalyticsChartsClient
         monthlyData={monthlyData}
         platformData={platformData}
         funnelData={funnelData}
+        sankeyData={sankeyData}
       />
 
       <div className={styles.listCardWrapper}>
