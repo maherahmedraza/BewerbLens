@@ -187,6 +187,11 @@ Four GitHub Actions workflows automate CI and deployment:
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project settings | CI build env var |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project settings | CI build env var |
 | `NEXT_PUBLIC_ORCHESTRATOR_URL` | DigitalOcean app URL | CI build env var |
+| **All other `.env` Secrets** | GitHub Repository Secrets | Used by the `sync-secrets.yml` workflow to update Vercel and DigitalOcean |
+
+#### Centralized Secret Management
+Instead of manually updating secrets across Vercel and DigitalOcean, you can manage them centrally in **GitHub Repository Secrets**. 
+When you update a secret in GitHub, manually trigger the **"Sync Secrets to Vercel & DigitalOcean"** workflow in the Actions tab. This runs `scripts/sync_secrets.py` which automatically updates the environment variables in both Vercel and DigitalOcean.
 
 #### Deploy Flow
 
