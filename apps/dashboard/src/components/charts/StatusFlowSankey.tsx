@@ -18,12 +18,12 @@ interface StatusFlowSankeyProps {
 type SankeyNodePayload = StatusFlowSankeyData["nodes"][number];
 
 const STATUS_STYLES: Record<string, { fill: string; stroke: string }> = {
-  "Applications Submitted": { fill: "#ec4899", stroke: "#db2777" },
-  Applied: { fill: "#6366f1", stroke: "#4f46e5" },
-  "Positive Response": { fill: "#14b8a6", stroke: "#0f766e" },
-  Interview: { fill: "#38bdf8", stroke: "#0284c7" },
-  Offer: { fill: "#f59e0b", stroke: "#d97706" },
-  Rejected: { fill: "#eab308", stroke: "#ca8a04" },
+  "Applications Submitted": { fill: "var(--chart-submitted)", stroke: "var(--chart-submitted)" },
+  Applied: { fill: "var(--chart-applied)", stroke: "var(--chart-applied)" },
+  "Positive Response": { fill: "var(--chart-positive)", stroke: "var(--chart-positive)" },
+  Interview: { fill: "var(--chart-interview)", stroke: "var(--chart-interview)" },
+  Offer: { fill: "var(--chart-offer)", stroke: "var(--chart-offer)" },
+  Rejected: { fill: "var(--chart-rejected)", stroke: "var(--chart-rejected)" },
 };
 
 function getStatusStyle(status: string) {
@@ -76,6 +76,7 @@ function SankeyNode({ x, y, width, height, payload }: RechartsSankeyNodeProps) {
         fillOpacity={0.92}
         stroke={stroke}
         strokeWidth={1.5}
+        shapeRendering="geometricPrecision"
       />
       <text
         x={labelX}
@@ -132,6 +133,7 @@ function SankeyLink({
       stroke={fill}
       strokeOpacity={0.28}
       strokeWidth={Math.max(linkWidth, 1)}
+      shapeRendering="geometricPrecision"
     />
   );
 }
@@ -149,10 +151,10 @@ export default function StatusFlowSankey({ data, height = 380 }: StatusFlowSanke
             data={data}
             node={SankeyNode}
             link={SankeyLink}
-            nodePadding={28}
-            nodeWidth={18}
+            nodePadding={32}
+            nodeWidth={20}
             sort
-            margin={{ top: 12, right: 160, bottom: 12, left: 140 }}
+            margin={{ top: 20, right: 180, bottom: 20, left: 160 }}
           >
             <Tooltip
               contentStyle={{

@@ -42,16 +42,16 @@ export default function MonthlyChart({ data, height = 300 }: MonthlyChartProps) 
         <BarChart data={chartData} margin={{ top: 8, right: 0, left: -20, bottom: 0 }} barCategoryGap="18%">
           <defs>
             <linearGradient id="colorApplied" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.95}/>
-              <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.24}/>
+              <stop offset="5%" stopColor="var(--chart-applied)" stopOpacity={0.95}/>
+              <stop offset="95%" stopColor="var(--chart-applied)" stopOpacity={0.24}/>
             </linearGradient>
             <linearGradient id="colorRejected" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.95}/>
-              <stop offset="95%" stopColor="#fb7185" stopOpacity={0.24}/>
+              <stop offset="5%" stopColor="var(--chart-rejected)" stopOpacity={0.95}/>
+              <stop offset="95%" stopColor="var(--chart-rejected)" stopOpacity={0.24}/>
             </linearGradient>
             <linearGradient id="colorPositive" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.95}/>
-              <stop offset="95%" stopColor="#34d399" stopOpacity={0.22}/>
+              <stop offset="5%" stopColor="var(--chart-positive)" stopOpacity={0.95}/>
+              <stop offset="95%" stopColor="var(--chart-positive)" stopOpacity={0.22}/>
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="0" vertical={false} stroke="var(--chart-grid)" />
@@ -75,9 +75,9 @@ export default function MonthlyChart({ data, height = 300 }: MonthlyChartProps) 
             wrapperStyle={{ paddingTop: "18px", fontSize: "12px", fontWeight: 600 }}
             iconType="circle"
           />
-          <Bar dataKey="applied" fill="url(#colorApplied)" name="Applications" radius={[8, 8, 0, 0]} animationDuration={800} />
-          <Bar dataKey="rejected" fill="url(#colorRejected)" name="Rejected Responses" radius={[8, 8, 0, 0]} animationDuration={800} />
-          <Bar dataKey="positive" fill="url(#colorPositive)" name="Positive Progress" radius={[8, 8, 0, 0]} animationDuration={800} />
+          <Bar dataKey="applied" fill="url(#colorApplied)" name="Applications" radius={[8, 8, 0, 0]} animationDuration={800} shapeRendering="geometricPrecision" />
+          <Bar dataKey="rejected" fill="url(#colorRejected)" name="Rejected Responses" radius={[8, 8, 0, 0]} animationDuration={800} shapeRendering="geometricPrecision" />
+          <Bar dataKey="positive" fill="url(#colorPositive)" name="Positive Progress" radius={[8, 8, 0, 0]} animationDuration={800} shapeRendering="geometricPrecision" />
         </BarChart>
       </ResponsiveContainer>
     </div>

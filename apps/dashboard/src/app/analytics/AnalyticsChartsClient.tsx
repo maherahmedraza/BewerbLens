@@ -2,6 +2,7 @@
 
 import { ArrowsPointingOutIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useMemo, useState } from "react";
+import clsx from "clsx";
 
 import MonthlyChart from "@/components/charts/MonthlyChart";
 import PlatformPie from "@/components/charts/PlatformPie";
@@ -77,7 +78,10 @@ export default function AnalyticsChartsClient({
     <>
       <div className={styles.grid}>
         {(Object.keys(chartDefinitions) as ChartKey[]).map((key) => (
-          <section key={key} className={styles.chartCard}>
+          <section
+            key={key}
+            className={clsx(styles.chartCard, key === "sankey" && styles.sankeyCard)}
+          >
             <div className={styles.cardHeader}>
               <div className={styles.cardHeaderText}>
                 <h3 className={styles.cardTitle}>{chartDefinitions[key].title}</h3>

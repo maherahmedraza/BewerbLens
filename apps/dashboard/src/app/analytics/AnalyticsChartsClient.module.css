@@ -18,6 +18,16 @@
   min-height: 100%;
 }
 
+.sankeyCard {
+  grid-column: 1 / -1; /* Take the full row width for better readability */
+}
+
+@media (max-width: 1024px) {
+  .sankeyCard {
+    grid-column: auto;
+  }
+}
+
 .cardHeader {
   display: flex;
   justify-content: space-between;

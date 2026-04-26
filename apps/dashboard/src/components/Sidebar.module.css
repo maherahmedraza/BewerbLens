@@ -79,14 +79,14 @@
 }
 
 .navLink:hover {
-  background-color: rgba(255, 255, 255, 0.72);
+  background-color: var(--bg-hover);
   color: var(--text-primary);
 }
 
 .active {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(14, 165, 233, 0.08));
-  color: #4338ca !important;
-  border: 1px solid rgba(129, 140, 248, 0.18);
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue) !important;
+  border: 1px solid var(--accent-blue-soft);
 }
 
 .icon {
@@ -97,7 +97,7 @@
 
 .footer {
   padding-top: 24px;
-  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  border-top: 1px solid var(--border-color);
 }
 
 .userSection {
@@ -117,16 +117,16 @@
   text-decoration: none;
   color: inherit;
   transition: all 0.2s ease;
-  background: rgba(248, 250, 252, 0.82);
-  border: 1px solid rgba(226, 232, 240, 0.86);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .userLink:hover {
-  background-color: white;
+  background-color: var(--bg-hover);
 }
 
 .avatar {
-  background: linear-gradient(135deg, #4f46e5, #0ea5e9);
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
   color: white;
   width: 42px;
   height: 42px;

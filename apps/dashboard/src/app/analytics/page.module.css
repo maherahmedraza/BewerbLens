@@ -15,8 +15,8 @@
   width: fit-content;
   padding: 8px 14px;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.12);
-  color: #4338ca;
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -111,7 +111,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background-color: var(--bg-hover);
+  background-color: var(--bg-secondary);
   border-radius: 8px;
   transition: transform 0.2s ease;
 }

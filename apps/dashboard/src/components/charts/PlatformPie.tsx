@@ -50,11 +50,12 @@ export default function PlatformPie({ data, height = 320 }: PlatformPieProps) {
             nameKey="platform"
             cx="50%"
             cy="50%"
-            outerRadius={108}
-            innerRadius={66}
+            outerRadius={112}
+            innerRadius={74}
             paddingAngle={3}
             labelLine={false}
             label={false}
+            shapeRendering="geometricPrecision"
           >
             {chartData.map((_entry, index) => (
               <Cell 
@@ -62,7 +63,7 @@ export default function PlatformPie({ data, height = 320 }: PlatformPieProps) {
                 fill={COLORS[index % COLORS.length]} 
                 stroke="var(--bg-card)"
                 strokeWidth={2}
-                style={{ outline: "none" }}
+                style={{ outline: "none", shapeRendering: "geometricPrecision" }}
               />
             ))}
           </Pie>
