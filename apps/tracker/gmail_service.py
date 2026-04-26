@@ -224,6 +224,9 @@ def _load_credentials_from_json(creds_json: Dict, client=None, user_id: str = No
     Handles token refresh if expired.
     If client and user_id are provided, persists refreshed tokens to DB.
     """
+    if not creds_json:
+        raise ValueError("Decrypted credentials data is empty. Decryption may have failed due to a mismatched ENCRYPTION_SECRET.")
+
     creds = Credentials(
         token=creds_json.get('token'),
         refresh_token=creds_json.get('refresh_token'),
