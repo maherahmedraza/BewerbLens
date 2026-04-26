@@ -9,7 +9,9 @@ name: Deploy Frontend Preview (Vercel)
 
 on:
   push:
-    branches: [dev]
+    branches:
+      - dev
+      - "dev/**"
     paths:
       - "apps/dashboard/**"
       - ".github/workflows/deploy-preview.yml"
