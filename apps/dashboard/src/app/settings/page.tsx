@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import WorkspaceSettings from "@/components/settings/WorkspaceSettings";
 import api from "@/lib/api";
 import type { PipelineConfig, SyncMode, SyncStatus } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
@@ -196,9 +197,17 @@ export default function SettingsPage() {
 
   return (
     <div className={styles.container}>
-      <h1 className={styles.heading}>Settings</h1>
+      <header className={styles.header}>
+        <span className={styles.eyebrow}>Workspace controls</span>
+        <h1 className={styles.heading}>One place for account, sync, notifications, and data controls.</h1>
+        <p className={styles.description}>
+          Settings now groups personal account setup, integrations, pipeline controls, and privacy actions
+          into a single workspace so configuration lives in one place.
+        </p>
+      </header>
 
-      <div className={styles.section}>
+      <div className={styles.stack}>
+      <div className={styles.section} id="sync-controls">
         <h2 className={styles.sectionTitle}>Sync Controls</h2>
         <p className={styles.description}>
           Choose the backfill window for first-time syncs, check the latest status, and trigger on-demand runs.
@@ -280,7 +289,7 @@ export default function SettingsPage() {
               {syncSettings.gmail_connected_via === "env_fallback" ? (
                 <p className={styles.errorText}>
                   This user is still running on the legacy Gmail environment fallback. Connect Gmail
-                  from the Profile page to switch to stored OAuth credentials.
+                  from Workspace Settings to switch to stored OAuth credentials.
                 </p>
               ) : null}
 
@@ -401,6 +410,9 @@ export default function SettingsPage() {
       </div>
 
       {message ? <div className={styles.message}>{message}</div> : null}
+      </div>
+
+      <WorkspaceSettings showHeading={false} />
     </div>
   );
 }

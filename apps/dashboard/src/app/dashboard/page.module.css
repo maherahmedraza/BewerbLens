@@ -1,0 +1,337 @@
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 24px;
+}
+
+.heroCard,
+.chartCard,
+.listCard,
+.focusCard,
+.calloutCard {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(226, 232, 240, 0.88);
+  box-shadow: 0 24px 60px rgba(148, 163, 184, 0.14);
+  backdrop-filter: blur(24px);
+}
+
+.heroCard {
+  padding: 28px;
+  border-radius: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.heroHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.eyebrow {
+  display: inline-flex;
+  margin-bottom: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #4338ca;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+}
+
+.subtitle {
+  margin: 14px 0 0;
+  max-width: 60ch;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.heroPill {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #111827;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.spotlightGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.spotlightCard {
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(248, 250, 252, 0.86);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.spotlightLabel,
+.spotlightNote,
+.sectionHeader p,
+.listItem span,
+.empty,
+.focusLabel,
+.calloutCard p,
+.calloutMetrics span {
+  color: var(--text-secondary);
+}
+
+.spotlightLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.spotlightValue {
+  display: block;
+  margin: 12px 0 6px;
+  font-size: 32px;
+  letter-spacing: -0.05em;
+}
+
+.spotlightNote {
+  margin: 0;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.sectionHeader h2,
+.actionCard h2,
+.listCard h3,
+.calloutCard h2 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+
+.sectionHeader p {
+  margin: 8px 0 0;
+  line-height: 1.6;
+}
+
+.chartCard,
+.listCard,
+.focusCard,
+.calloutCard {
+  border-radius: 28px;
+  padding: 24px;
+}
+
+.actionGrid,
+.dualLists {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.actionCard,
+.signalCard {
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(248, 250, 252, 0.86);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.actionCard p,
+.signalCard p {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.actionLink,
+.calloutLink {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+  padding: 11px 16px;
+  border-radius: 999px;
+  background: #111827;
+  color: #fff;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.signalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.signalCard span {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.signalCard strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 32px;
+  letter-spacing: -0.05em;
+}
+
+.sideRail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.focusValue {
+  display: block;
+  margin-top: 10px;
+  font-size: 64px;
+  line-height: 0.95;
+  letter-spacing: -0.07em;
+}
+
+.focusLabel {
+  margin: 10px 0 18px;
+}
+
+.focusMeta,
+.calloutMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.focusMeta div,
+.calloutMetrics div {
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.88);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.focusMeta span,
+.calloutMetrics span {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.focusMeta strong,
+.calloutMetrics strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.listItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.86);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.listItem strong,
+.listItem em {
+  display: block;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.listItem span {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.analyticsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.calloutCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.wideCard {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1080px) {
+  .heroGrid,
+  .analyticsGrid,
+  .spotlightGrid,
+  .actionGrid,
+  .dualLists,
+  .signalGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .heroHeader {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .heroCard,
+  .chartCard,
+  .listCard,
+  .focusCard,
+  .calloutCard {
+    padding: 20px;
+  }
+
+  .focusValue {
+    font-size: 48px;
+  }
+}

@@ -1,6 +1,12 @@
 import "server-only";
 
-import type { Application, MonthlyApplication, PlatformBreakdown, StatusHistoryEntry } from "@/lib/types";
+import type {
+  Application,
+  MonthlyApplication,
+  PlatformBreakdown,
+  StatusFlowSankeyData,
+  StatusHistoryEntry,
+} from "@/lib/types";
 import { normalizeStatus } from "@/lib/status";
 import { createClient } from "@/lib/supabase/server";
 
@@ -52,6 +58,11 @@ type ApplicationRow = Pick<
 
 const APPLICATION_SELECT =
   "id, company_name, job_title, platform, status, date_applied, last_updated, location, job_location, job_city, job_country, work_mode, salary_range, email_subject, email_from, gmail_link, job_listing_url, source_email_id, email_count, notes, status_history";
+
+const POSITIVE_STATUSES = new Set(["Positive Response", "Interview", "Offer"]);
+const TERMINAL_STATUSES = new Set(["Rejected", "Offer"]);
+const SANKEY_STATUSES = new Set(["Applied", "Positive Response", "Interview", "Offer", "Rejected"]);
+const SANKEY_START = "Applications Submitted";
 
 function normalizeMonth(value: string | null | undefined) {
   if (!value) {
@@ -106,6 +117,49 @@ function serializeStatusHistory(history: StatusHistoryEntry[]) {
       return [timestamp, status, subject].filter(Boolean).join(" - ");
     })
     .join(" | ");
+}
+
+function getSortableTimestamp(value: string | null | undefined, fallbackIndex: number) {
+  if (!value) {
+    return Number.MAX_SAFE_INTEGER - 10_000 + fallbackIndex;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER - 10_000 + fallbackIndex : parsed;
+}
+
+function buildStatusSequence(application: ApplicationRow) {
+  const sequence: string[] = [SANKEY_START];
+  const pushStatus = (status: string) => {
+    if (!SANKEY_STATUSES.has(status)) {
+      return;
+    }
+
+    if (sequence[sequence.length - 1] !== status) {
+      sequence.push(status);
+    }
+  };
+
+  pushStatus("Applied");
+
+  const history = normalizeHistoryEntries(application.status_history)
+    .map((entry, index) => ({
+      status: normalizeStatus(entry.status || ""),
+      timestamp: getSortableTimestamp(entry.changed_at || entry.timestamp || entry.date, index),
+      index,
+    }))
+    .filter((entry) => SANKEY_STATUSES.has(entry.status))
+    .sort((left, right) =>
+      left.timestamp === right.timestamp ? left.index - right.index : left.timestamp - right.timestamp
+    );
+
+  for (const entry of history) {
+    pushStatus(entry.status);
+  }
+
+  pushStatus(normalizeStatus(application.status));
+
+  return sequence;
 }
 
 export async function getApplicationsForCurrentUser() {
@@ -223,6 +277,87 @@ export function buildPlatformBreakdown(applications: ApplicationRow[]): Platform
   }
 
   return Array.from(buckets.values()).sort((left, right) => right.count - left.count);
+}
+
+export function buildStatusFlowSankey(applications: ApplicationRow[]): StatusFlowSankeyData {
+  const nodes: StatusFlowSankeyData["nodes"] = [];
+  const links: StatusFlowSankeyData["links"] = [];
+  const nodeIndexByKey = new Map<string, number>();
+  const linkIndexByKey = new Map<string, number>();
+
+  const summary = {
+    total: applications.length,
+    active: 0,
+    applied: 0,
+    progressing: 0,
+    rejected: 0,
+    offers: 0,
+  };
+
+  for (const application of applications) {
+    const currentStatus = normalizeStatus(application.status);
+
+    if (currentStatus === "Applied") {
+      summary.applied += 1;
+    }
+    if (POSITIVE_STATUSES.has(currentStatus)) {
+      summary.progressing += 1;
+    }
+    if (currentStatus === "Rejected") {
+      summary.rejected += 1;
+    }
+    if (currentStatus === "Offer") {
+      summary.offers += 1;
+    }
+    if (!TERMINAL_STATUSES.has(currentStatus)) {
+      summary.active += 1;
+    }
+
+    const sequence = buildStatusSequence(application);
+
+    let previousNodeIndex: number | null = null;
+    for (const [depth, status] of sequence.entries()) {
+      const nodeKey = `${depth}:${status}`;
+      let nodeIndex = nodeIndexByKey.get(nodeKey);
+
+      if (nodeIndex == null) {
+        nodeIndex = nodes.length;
+        nodes.push({
+          name: status,
+          status,
+          depth,
+          count: 0,
+        });
+        nodeIndexByKey.set(nodeKey, nodeIndex);
+      }
+
+      nodes[nodeIndex].count += 1;
+
+      if (previousNodeIndex != null && previousNodeIndex !== nodeIndex) {
+        const linkKey = `${previousNodeIndex}:${nodeIndex}`;
+        const existingLinkIndex = linkIndexByKey.get(linkKey);
+
+        if (existingLinkIndex == null) {
+          links.push({
+            source: previousNodeIndex,
+            target: nodeIndex,
+            value: 1,
+          });
+          linkIndexByKey.set(linkKey, links.length - 1);
+        } else {
+          links[existingLinkIndex].value += 1;
+        }
+      }
+
+      previousNodeIndex = nodeIndex;
+    }
+  }
+
+  return {
+    nodes,
+    links,
+    summary,
+  };
 }
 
 export function buildApplicationsCsv(applications: ApplicationRow[]) {

@@ -39,10 +39,15 @@ The core processing engine written in Python 3.11+.
 
 ### 3. Dashboard Frontend (`apps/dashboard`)
 A Next.js 16 application using the App Router.
+- **Layout**: `AppShell` client component switches between a public layout (no sidebar/header for `/` and `/login`) and the authenticated app container with sidebar and header.
+- **Landing Page** (`/`): Public page with feature highlights, trust stats, and auth-aware CTA. No sidebar or header chrome.
+- **Dashboard** (`/dashboard`): Authenticated operational overview — spotlight cards, quick actions, pipeline health signals, top companies, and location mix.
+- **Analytics** (`/analytics`): Single analytics hub — insight cards, monthly trends, conversion funnel, platform breakdown, **Sankey status flow** chart (custom Recharts component with typed nodes/links), and usage analytics.
+- **Settings** (`/settings`): Unified workspace — sync controls, pipeline configuration, GDPR export/delete, account details, integrations (Gmail OAuth, Telegram linking), and email filters. `/profile` redirects here.
 - **Pipeline Page**: Three-panel layout — `PipelineMonitor` (live stage progress + run controls), `ExecutionHistory` (paginated run table with log drawer and resume/stop actions), and `ConfigPanel` (pause/resume scheduler, sync interval, log retention).
 - **Realtime**: `usePipeline.ts` hooks use Supabase Realtime (Postgres Changes) to subscribe to `pipeline_runs`, `pipeline_run_steps`, and `pipeline_config` tables. The UI updates without polling.
 - **Optimistic UI**: `useUpdateConfig` applies config changes locally before the API call completes, rolling back on error.
-- **Analytics**: Visualises job search trends, platform success rates, and response times via Recharts.
+- **Design System**: Uses Instrument Sans (body), Fraunces (display), and IBM Plex Mono for typography. Glassmorphic surfaces with semi-transparent backgrounds, large diffused shadows, and 24px border radii.
 
 ---
 

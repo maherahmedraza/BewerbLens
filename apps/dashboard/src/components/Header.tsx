@@ -28,7 +28,7 @@ export default function Header() {
       }
       
       // Only replace URL if we are on a searchable page
-      if (pathname === "/applications" || pathname === "/") {
+      if (pathname === "/applications" || pathname === "/dashboard") {
         router.replace(`${pathname}?${params.toString()}`);
       }
     }

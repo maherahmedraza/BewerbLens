@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/maherahmedraza/BewerbLens/actions/workflows/ci.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/ci.yml)
 [![Deploy Frontend](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy.yml)
+[![Deploy Frontend Preview](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-preview.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-preview.yml)
 [![Deploy Backend](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-backend.yml/badge.svg)](https://github.com/maherahmedraza/BewerbLens/actions/workflows/deploy-backend.yml)
 
 ---
@@ -28,7 +29,8 @@ graph TB
     subgraph "GitHub"
         GH[Repository]
         CI[CI Pipeline<br/>lint + build + test]
-        DF[Deploy Frontend]
+        DFP[Deploy Frontend Preview]
+        DFR[Deploy Frontend]
         DB_DEPLOY[Deploy Backend]
     end
 
@@ -54,10 +56,12 @@ graph TB
         TG[Telegram Bot]
     end
 
-    GH -->|push to main| CI
-    CI -->|on success| DF
-    CI -->|on success| DB_DEPLOY
-    DF --> DASH
+    GH -->|push to dev/main| CI
+    CI -->|dev success| DFP
+    CI -->|main success| DFR
+    CI -->|main backend success| DB_DEPLOY
+    DFP --> DASH
+    DFR --> DASH
     DB_DEPLOY --> ORCH
 
     DASH -->|API calls| ORCH
@@ -126,6 +130,7 @@ BewerbLens/
 │   ├── copilot-instructions.md       # Repo assistant guidance
 │   └── workflows/
 │       ├── ci.yml                    # Lint, test, build (reusable)
+│       ├── deploy-preview.yml        # Frontend preview → Vercel (dev)
 │       ├── deploy.yml                # Frontend → Vercel
 │       └── deploy-backend.yml        # Backend → DigitalOcean
 ├── apps/
@@ -204,10 +209,29 @@ Visit `http://localhost:3000` to access the dashboard.
 
 ### 6. Connect Gmail and run the first pipeline
 
-1. Sign in to the dashboard and open **Profile**.
+1. Sign in to the dashboard and open **Settings**.
 2. Click **Connect Gmail** to authorize Gmail with OAuth. Users do **not** paste Gmail API keys into the app.
 3. Open **Settings** and queue a **Backfill** run. This broad-discovery pass fetches read and unread candidate emails, then lets Gemini decide job relevance.
 4. Open **Applications** to review results or export them as CSV for Excel / Google Sheets.
+
+---
+
+## Branching & Release Flow
+
+BewerbLens now uses a strict two-branch flow:
+
+| Branch | Purpose | Deploy behavior |
+|---|---|---|
+| `dev` | Integration and QA branch | Runs CI and deploys a Vercel preview build |
+| `main` | Production-only branch | Runs CI and deploys production frontend/backend |
+
+Recommended workflow:
+
+1. Commit all active work to `dev`.
+2. Validate the Vercel preview URL generated from `dev`.
+3. Merge `dev` into `main` only when the change is production-ready.
+
+**Note:** backend preview isolation is not automatic by default. The committed workflows keep DigitalOcean production pinned to `main`; a separate DigitalOcean app and secret set would be required for a true backend preview environment.
 
 ---
 
@@ -224,13 +248,12 @@ BewerbLens uses a hybrid cloud architecture for cost-effective production hostin
 
 ### CI/CD Pipeline
 
-```
-git push → CI (lint + build + test + security scan)
-                ├── Frontend: Vercel production deploy
-                └── Backend: DigitalOcean container deploy
+```text
+git push dev  → CI → Vercel preview deploy
+git push main → CI → Vercel production deploy + DigitalOcean backend deploy
 ```
 
-All workflows use **path filtering** — frontend deploys only trigger when `apps/dashboard/**` changes, backend deploys only trigger when `apps/tracker/**` or `apps/orchestrator/**` changes. Recurring incremental syncs are handled by the orchestrator scheduler itself rather than a separate GitHub Actions cron workflow.
+All workflows use **path filtering** — preview and production frontend deploys only trigger when `apps/dashboard/**` changes, backend deploys only trigger when `apps/tracker/**` or `apps/orchestrator/**` changes. Recurring incremental syncs are handled by the orchestrator scheduler itself rather than a separate GitHub Actions cron workflow.
 
 See [docs/deployment.md](docs/deployment.md) for full setup instructions.
 

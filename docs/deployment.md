@@ -142,11 +142,12 @@ The app spec is also defined in `.do/app.yaml` for declarative configuration.
 
 ### 2.3 CI/CD Pipeline
 
-Three GitHub Actions workflows automate CI and deployment:
+Four GitHub Actions workflows automate CI and deployment:
 
 | Workflow | File | Trigger | Purpose |
 |---|---|---|---|
-| **CI** | `ci.yml` | Every push & PR | Lint, test, build (reusable) |
+| **CI** | `ci.yml` | Every push & PR to `main` and `dev` | Lint, test, build (reusable) |
+| **Deploy Frontend Preview** | `deploy-preview.yml` | Push to `dev` (dashboard changes) | Vercel preview deploy |
 | **Deploy Frontend** | `deploy.yml` | Push to `main` (dashboard changes) | Vercel production deploy |
 | **Deploy Backend** | `deploy-backend.yml` | Push to `main` (backend changes) | DigitalOcean container deploy |
 
@@ -165,7 +166,10 @@ Three GitHub Actions workflows automate CI and deployment:
 
 #### Deploy Flow
 
-```
+```text
+git push to dev
+    └── CI → Deploy Frontend Preview (Vercel preview URL)
+
 git push to main
     │
     ├── CI (ci.yml) runs first
@@ -180,13 +184,15 @@ git push to main
         └── doctl apps create-deployment <APP_ID> --wait
 ```
 
+> **Note:** Backend preview isolation is not automatic. The backend production deploy stays pinned to `main`. A true backend preview would require a separate DigitalOcean app with its own secrets.
+
 ---
 
 ## 3. Post-Deployment Verification
 
 1. **Backend health**: `GET https://<your-do-app>.ondigitalocean.app/health`
    - Expect: `{"status": "ok", "worker": "active", "scheduler": true}`
-2. **Frontend**: Visit your Vercel URL → Login → Connect Gmail from the **Profile** page.
+2. **Frontend**: Visit your Vercel URL → Login → Connect Gmail from the **Settings** page.
 3. **First backfill**: Open **Settings** and queue a backfill run so the user OAuth token is exercised and the pipeline processes read + unread candidate emails.
 4. **Scheduler verification**: Confirm the backend reports `"scheduler": true` on `/health`, then wait for the configured interval or trigger a manual run from the dashboard.
-5. **Telegram**: Generate a link code in the Profile page, complete the bot handshake, and verify you receive a consolidated run summary after the pipeline completes.
+5. **Telegram**: Generate a link code in the **Settings** page under Integrations, complete the bot handshake, and verify you receive a consolidated run summary after the pipeline completes.

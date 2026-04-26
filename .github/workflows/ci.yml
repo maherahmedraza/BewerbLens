@@ -1,7 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  BewerbLens CI — Lint, Test & Build                        ║
 # ║                                                             ║
-# ║  Runs on every push and PR to main.                        ║
+# ║  Runs on every push and PR to main and dev.                ║
 # ║  Both deploy workflows depend on this passing first.       ║
 # ╚══════════════════════════════════════════════════════════════╝
 
@@ -9,9 +9,9 @@ name: BewerbLens CI
 
 on:
   push:
-    branches: [main, feat/*, fix/*, docs/*]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_call:
 
 concurrency:

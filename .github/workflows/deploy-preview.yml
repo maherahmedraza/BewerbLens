@@ -1,0 +1,62 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  Deploy Frontend Preview → Vercel                           ║
+# ║                                                             ║
+# ║  Triggers on push to dev after CI passes.                   ║
+# ║  Keeps main reserved for production-only deploys.           ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+name: Deploy Frontend Preview (Vercel)
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "apps/dashboard/**"
+      - ".github/workflows/deploy-preview.yml"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-frontend-preview
+  cancel-in-progress: true
+
+jobs:
+  ci-gate:
+    name: CI Gate
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  deploy-vercel-preview:
+    name: Deploy Dashboard Preview → Vercel
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    environment:
+      name: dev-frontend
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel
+
+      - name: Pull Vercel preview config
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: apps/dashboard
+
+      - name: Build preview
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: apps/dashboard
+
+      - name: Deploy preview
+        id: deploy
+        run: |
+          URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "### Preview dashboard deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "**URL:** $URL" >> "$GITHUB_STEP_SUMMARY"
+        working-directory: apps/dashboard

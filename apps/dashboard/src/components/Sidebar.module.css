@@ -1,21 +1,24 @@
 .sidebar {
   position: fixed;
-  left: 0;
-  top: 0;
-  bottom: 0;
+  left: 18px;
+  top: 18px;
+  bottom: 18px;
   width: var(--sidebar-width);
   background-color: var(--bg-sidebar);
-  border-right: 1px solid var(--border-color);
+  border: 1px solid var(--border-color);
+  border-radius: 32px;
   display: flex;
   flex-direction: column;
-  padding: 24px 16px;
+  padding: 22px 18px;
   z-index: 200;
   transition: transform 0.3s ease;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(26px);
 }
 
 .logoContainer {
-  margin-bottom: 40px;
-  padding: 0 12px;
+  margin-bottom: 28px;
+  padding: 0 8px;
 }
 
 .logo {
@@ -25,7 +28,7 @@
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   letter-spacing: -0.03em;
 }
 
@@ -36,43 +39,54 @@
   object-position: center 10%;
   transform: scale(1.6);
   background: white;
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 4px;
   box-shadow: var(--shadow-sm);
 }
 
-.logoIcon {
-  font-size: 24px;
+.logoText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.logoCaption {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .nav {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .navLink {
   text-decoration: none;
   color: var(--text-secondary);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
   transition: all 0.2s ease;
 }
 
 .navLink:hover {
-  background-color: var(--bg-hover);
+  background-color: rgba(255, 255, 255, 0.72);
   color: var(--text-primary);
 }
 
 .active {
-  background-color: var(--accent-blue-soft);
-  color: var(--accent-blue) !important;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(14, 165, 233, 0.08));
+  color: #4338ca !important;
+  border: 1px solid rgba(129, 140, 248, 0.18);
 }
 
 .icon {
@@ -83,7 +97,7 @@
 
 .footer {
   padding-top: 24px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 .userSection {
@@ -98,23 +112,25 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px;
-  border-radius: 12px;
+  padding: 12px;
+  border-radius: 20px;
   text-decoration: none;
   color: inherit;
   transition: all 0.2s ease;
+  background: rgba(248, 250, 252, 0.82);
+  border: 1px solid rgba(226, 232, 240, 0.86);
 }
 
 .userLink:hover {
-  background-color: var(--bg-hover);
+  background-color: white;
 }
 
 .avatar {
-  background-color: var(--accent-blue);
+  background: linear-gradient(135deg, #4f46e5, #0ea5e9);
   color: white;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -157,6 +173,10 @@
 @media (max-width: 768px) {
   .sidebar {
     transform: translateX(-100%);
+    left: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 0 28px 28px 0;
   }
 
   .sidebar.open {

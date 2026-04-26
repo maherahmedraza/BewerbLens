@@ -5,23 +5,31 @@ import { useMemo, useState } from "react";
 
 import MonthlyChart from "@/components/charts/MonthlyChart";
 import PlatformPie from "@/components/charts/PlatformPie";
+import StatusFlowSankey from "@/components/charts/StatusFlowSankey";
 import StatusFunnel from "@/components/charts/StatusFunnel";
-import type { ConversionFunnel, MonthlyApplication, PlatformBreakdown } from "@/lib/types";
+import type {
+  ConversionFunnel,
+  MonthlyApplication,
+  PlatformBreakdown,
+  StatusFlowSankeyData,
+} from "@/lib/types";
 
 import styles from "./AnalyticsChartsClient.module.css";
 
-type ChartKey = "monthly" | "platform" | "funnel";
+type ChartKey = "monthly" | "platform" | "funnel" | "sankey";
 
 interface AnalyticsChartsClientProps {
   monthlyData: MonthlyApplication[];
   platformData: PlatformBreakdown[];
   funnelData: ConversionFunnel[];
+  sankeyData: StatusFlowSankeyData;
 }
 
 export default function AnalyticsChartsClient({
   monthlyData,
   platformData,
   funnelData,
+  sankeyData,
 }: AnalyticsChartsClientProps) {
   const [selectedChart, setSelectedChart] = useState<ChartKey | null>(null);
 
@@ -54,8 +62,15 @@ export default function AnalyticsChartsClient({
           <StatusFunnel data={funnelData} height={expanded ? 360 : 260} />
         ),
       },
+      sankey: {
+        title: "Status Flow",
+        description: "Stage-to-stage movement from submission into response, interview, rejection, and offer.",
+        render: (expanded: boolean) => (
+          <StatusFlowSankey data={sankeyData} height={expanded ? 520 : 420} />
+        ),
+      },
     }),
-    [funnelData, monthlyData, platformData]
+    [funnelData, monthlyData, platformData, sankeyData]
   );
 
   return (

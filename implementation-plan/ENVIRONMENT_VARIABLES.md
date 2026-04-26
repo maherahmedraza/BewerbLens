@@ -51,6 +51,10 @@
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `TELEGRAM_ENABLED` | Optional | Global notification fallback switch |
-| `TELEGRAM_BOT_TOKEN` | Optional | Bot token used by the tracker sender |
+| `TELEGRAM_ENABLED` | Required for current tracker sender path | Global notification gate used by the tracker before sending run reports |
+| `TELEGRAM_BOT_TOKEN` | Required for linked-user delivery | Bot token used by the tracker sender |
 | `TELEGRAM_CHAT_ID` | Optional | Legacy/default chat target for single-user runs |
+
+## Current deployment note
+
+- `.do/app.yaml` currently sets `TELEGRAM_ENABLED` to `"false"`, which disables the tracker delivery path in production unless the code is changed or the env is overridden at deploy time.

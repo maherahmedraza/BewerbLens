@@ -44,4 +44,4 @@ services:
         type: SECRET
       - key: TELEGRAM_ENABLED
         scope: RUN_TIME
-        value: "false"
+        value: "true"
