@@ -1,0 +1,48 @@
+from datetime import date
+
+from models import EmailMetadata, FollowUpReminderItem
+from telegram_notifier import _build_follow_up_message
+from tracker import _select_emails_for_current_run
+
+
+def _email(email_id: str) -> EmailMetadata:
+    return EmailMetadata(
+        email_id=email_id,
+        thread_id=f"thread-{email_id}",
+        subject=f"Subject {email_id}",
+        sender="Recruiter",
+        sender_email="jobs@example.com",
+        date=date(2025, 1, 1),
+        body="Hello",
+    )
+
+
+def test_select_emails_for_current_run_prioritizes_recovered_items():
+    emails = [_email("fresh-1"), _email("recovered-1"), _email("fresh-2"), _email("recovered-2")]
+
+    selected, deferred = _select_emails_for_current_run(
+        emails,
+        recovered_email_ids={"recovered-1", "recovered-2"},
+        max_emails_per_run=2,
+    )
+
+    assert [email.email_id for email in selected] == ["recovered-1", "recovered-2"]
+    assert deferred == ["fresh-1", "fresh-2"]
+
+
+def test_build_follow_up_message_includes_summary_and_escapes_names():
+    message = _build_follow_up_message(
+        [
+            FollowUpReminderItem(
+                application_id="app-1",
+                company_name="ACME_[Labs]",
+                job_title="Data Scientist",
+                date_applied=date(2025, 1, 10),
+            )
+        ],
+        reminder_days=14,
+    )
+
+    assert "14 days" in message
+    assert "ACME\\_\\[Labs\\]" in message
+    assert "Data Scientist" in message

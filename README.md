@@ -95,6 +95,7 @@ graph TB
 ### System Orchestration
 - **Real-time Monitoring** — Granular stage-level progress (Ingestion → Analysis → Persistence) shown live via Supabase Realtime.
 - **Smart Scheduling** — Configurable interval (1 h – 24 h) stored in `pipeline_config`; dynamically updated without restart.
+- **Backfill Fairness Cap** — Large inbox backfills are automatically chunked with `max_emails_per_run` so one user cannot monopolize the single worker.
 - **Pause / Resume** — Toggle the scheduler on/off from the dashboard without touching the server.
 - **Run Controls** — Stop an active run, resume a failed/cancelled run, or rerun ingestion/analysis/persistence from the UI.
 - **Manual Triggers** — Start a sync or backfill on-demand via the UI or API; returns immediately while execution continues asynchronously.
@@ -109,10 +110,12 @@ graph TB
 - **Status Priority** — Terminal states (Offer, Rejected) are never overwritten by later lower-priority emails.
 - **Zombie Detection** — Scheduler runs `HeartbeatMonitor` every 5 minutes to detect and kill stale runs.
 - **Consolidated Telegram Reports** — End-of-run summary report instead of per-job spam notifications.
+- **Follow-up Reminders** — Daily scheduler job nudges Telegram-linked users about older `Applied` applications that still deserve a follow-up.
 - **Retry & Graceful Degradation** — Exponential-backoff retries; partial successes are saved rather than discarded.
 
 ### Premium Dashboard
 - **Pipeline View** — Stage-by-stage progress bars, execution history table, config panel (pause, interval, retention), and per-run log drawer.
+- **Operational Guardrails** — Error boundary, shared loading states, accessible charts, and CSV export tuned for spreadsheet consumers.
 - **Analytics Hub** — Interactive charts for application trends plus operational usage telemetry for Gmail, Gemini, Telegram, and sync health.
 - **Secure Integrations** — Gmail OAuth and Telegram linking happen through server-side route handlers so tokens and chat IDs never need to live in client state.
 - **Spreadsheet Export** — Applications can be exported as CSV for Excel and Google Sheets.
@@ -191,6 +194,8 @@ psql "$DATABASE_URL" -f db/migrations/008_fix_pipeline_runs_constraints.sql
 psql "$DATABASE_URL" -f db/migrations/009_reset_for_reprocessing.sql
 psql "$DATABASE_URL" -f db/migrations/010_sync_integrations_analytics.sql
 psql "$DATABASE_URL" -f db/migrations/011_fix_admin_role_policy_function.sql
+psql "$DATABASE_URL" -f db/migrations/012_platform_allowlist_gmail_legacy_and_locations.sql
+psql "$DATABASE_URL" -f db/migrations/013_pipeline_controls_and_followups.sql
 ```
 
 ### 4. Start Backend Services
@@ -229,9 +234,10 @@ Recommended workflow:
 
 1. Commit all active work to `dev`.
 2. Validate the Vercel preview URL generated from `dev`.
-3. Merge `dev` into `main` only when the change is production-ready.
+3. If you created a preview backend app, validate the DigitalOcean preview deployment triggered by `deploy-backend-preview.yml`.
+4. Merge `dev` into `main` only when the change is production-ready.
 
-**Note:** backend preview isolation is not automatic by default. The committed workflows keep DigitalOcean production pinned to `main`; a separate DigitalOcean app and secret set would be required for a true backend preview environment.
+**Note:** backend preview isolation is now supported with a second DigitalOcean app. Use `.do/app.dev.yaml` plus the `DIGITALOCEAN_DEV_APP_ID` secret to keep `dev` traffic away from production.
 
 ---
 

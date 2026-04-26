@@ -7,10 +7,20 @@
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from config import settings
 from failure_handler import HeartbeatMonitor
 from loguru import logger
 from services.supabase_client import get_client, supabase
 from services.tracker import tracker_service
+from supabase_service import (
+    cleanup_pipeline_logs,
+    cleanup_usage_metrics,
+    get_due_follow_up_applications,
+    get_pipeline_config,
+    get_telegram_enabled_users,
+    mark_follow_up_reminders_sent,
+)
+from telegram_notifier import send_follow_up_reminder_for_user
 
 # UUID fijo de la fila singleton en pipeline_config
 SINGLETON_ID = "00000000-0000-0000-0000-000000000001"
@@ -27,6 +37,8 @@ class SchedulerService:
         self.current_interval_hours = 4.0
         self.job_id = "main_pipeline_sync"
         self.zombie_job_id = "zombie_cleanup"
+        self.retention_job_id = "pipeline_retention_cleanup"
+        self.follow_up_job_id = "follow_up_reminders"
         self.is_running = False
 
     async def start(self):
@@ -44,8 +56,20 @@ class SchedulerService:
                 id=self.zombie_job_id,
                 replace_existing=True,
             )
+            self.scheduler.add_job(
+                self._run_retention_cleanup,
+                trigger=IntervalTrigger(hours=6),
+                id=self.retention_job_id,
+                replace_existing=True,
+            )
+            self.scheduler.add_job(
+                self._run_follow_up_reminders,
+                trigger=IntervalTrigger(hours=24),
+                id=self.follow_up_job_id,
+                replace_existing=True,
+            )
 
-            logger.info("Scheduler service started (with zombie cleanup every 5 min)")
+            logger.info("Scheduler service started (sync, zombie cleanup, retention cleanup, reminders)")
 
     async def stop(self):
         """Para el scheduler de forma limpia."""
@@ -113,6 +137,60 @@ class SchedulerService:
                 logger.warning(f"Zombie cleanup: killed {killed} stale run(s)")
         except Exception as e:
             logger.error(f"Zombie cleanup failed: {e}")
+
+    def _run_retention_cleanup(self):
+        try:
+            client = get_client()
+            config = get_pipeline_config(client)
+            retention_days = int(config.get("retention_days") or 30)
+            deleted_logs = cleanup_pipeline_logs(client, retention_days)
+            deleted_usage = cleanup_usage_metrics(client, retention_days)
+            if deleted_logs or deleted_usage:
+                logger.info(
+                    "Retention cleanup removed "
+                    f"{deleted_logs} pipeline logs and {deleted_usage} usage rows"
+                )
+        except Exception as error:
+            logger.error(f"Retention cleanup failed: {error}")
+
+    def _run_follow_up_reminders(self):
+        try:
+            client = get_client()
+            users = get_telegram_enabled_users(client)
+            if not users:
+                return
+
+            sent_count = 0
+            for user in users:
+                reminders = get_due_follow_up_applications(
+                    client,
+                    user_id=user["id"],
+                    reminder_after_days=settings.follow_up_reminder_days,
+                    repeat_interval_days=settings.follow_up_reminder_repeat_days,
+                )
+                if not reminders:
+                    continue
+
+                sent, error = send_follow_up_reminder_for_user(
+                    user,
+                    reminders,
+                    reminder_days=settings.follow_up_reminder_days,
+                )
+                if sent:
+                    mark_follow_up_reminders_sent(
+                        client,
+                        [reminder.application_id for reminder in reminders],
+                    )
+                    sent_count += 1
+                elif error:
+                    logger.warning(
+                        f"Follow-up reminder failed for user {user.get('email') or user['id']}: {error}"
+                    )
+
+            if sent_count:
+                logger.info(f"Sent follow-up reminders to {sent_count} user(s)")
+        except Exception as error:
+            logger.error(f"Follow-up reminder job failed: {error}")
 
 
 # Instancia global

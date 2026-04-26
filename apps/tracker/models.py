@@ -153,6 +153,14 @@ class PipelineRunReport(BaseModel):
     duration_seconds: float = 0.0
 
 
+class FollowUpReminderItem(BaseModel):
+    application_id: str
+    company_name: str
+    job_title: str = "Not Specified"
+    date_applied: DateType = Field(default_factory=DateType.today)
+    status: str = Status.APPLIED.value
+
+
 class EmailMetadata(BaseModel):
     email_id: str
     thread_id: str

@@ -113,6 +113,7 @@ export interface PipelineConfig {
   retention_days?: number;
   schedule_interval_hours?: number;
   is_paused?: boolean;
+  max_emails_per_run?: number;
 }
 
 export type UserRole = "user" | "admin";

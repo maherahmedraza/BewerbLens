@@ -37,7 +37,11 @@ export default function MonthlyChart({ data, height = 300 }: MonthlyChartProps) 
   }));
 
   return (
-    <div className={styles.chartShell}>
+    <div
+      className={styles.chartShell}
+      role="img"
+      aria-label="Monthly applications, rejected responses, and positive progress over time"
+    >
       <ResponsiveContainer width="100%" height={height}>
         <BarChart data={chartData} margin={{ top: 8, right: 0, left: -20, bottom: 0 }} barCategoryGap="18%">
           <defs>

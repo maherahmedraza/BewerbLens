@@ -32,6 +32,7 @@ from models import (
 from pre_filter import apply_user_filters
 from supabase_service import (
     get_client,
+    get_pipeline_config,
     mark_raw_emails_processed,
     update_heartbeat,
     update_pipeline_step,
@@ -41,6 +42,53 @@ from usage_metrics import categorize_errors, record_usage_metrics
 
 class PipelineCancelledError(RuntimeError):
     """Raised when a run receives a cooperative cancellation request."""
+
+
+def _record_run_usage(
+    client,
+    user_id: str,
+    internal_id: Optional[str],
+    ingestion_stats: IngestionStageStats,
+    analysis_stats: AnalysisStageStats,
+    persistence_stats: PersistenceStageStats,
+    sync_status: str,
+    error_categories: dict[str, int] | None = None,
+) -> None:
+    record_usage_metrics(
+        client,
+        user_id=user_id,
+        run_id=internal_id,
+        recorded_for=date.today().isoformat(),
+        emails_processed=ingestion_stats.total_after_filters,
+        gmail_api_calls=ingestion_stats.gmail_api_calls,
+        gmail_remaining_quota_estimate=ingestion_stats.gmail_remaining_quota_estimate,
+        ai_requests=analysis_stats.ai_requests,
+        ai_input_tokens_est=analysis_stats.ai_input_tokens_est,
+        ai_output_tokens_est=analysis_stats.ai_output_tokens_est,
+        ai_estimated_cost_usd=analysis_stats.ai_estimated_cost_usd,
+        telegram_notifications_sent=persistence_stats.notifications_sent,
+        telegram_notifications_failed=persistence_stats.notifications_failed,
+        success_count=persistence_stats.added + persistence_stats.updated,
+        failure_count=persistence_stats.errors,
+        error_categories=error_categories or {},
+        sync_status=sync_status,
+    )
+
+
+def _select_emails_for_current_run(
+    emails: list[EmailMetadata],
+    recovered_email_ids: set[str],
+    max_emails_per_run: int,
+) -> tuple[list[EmailMetadata], list[str]]:
+    if len(emails) <= max_emails_per_run:
+        return emails, []
+
+    prioritized = [email for email in emails if email.email_id in recovered_email_ids]
+    prioritized.extend(email for email in emails if email.email_id not in recovered_email_ids)
+
+    selected = prioritized[:max_emails_per_run]
+    deferred_ids = [email.email_id for email in prioritized[max_emails_per_run:]]
+    return selected, deferred_ids
 
 
 def run_pipeline_multiuser(
@@ -116,23 +164,13 @@ def run_pipeline_multiuser(
                         PipelineStage.INGESTION,
                         "No emails to process for this run.",
                     )
-                    record_usage_metrics(
+                    _record_run_usage(
                         client,
-                        user_id=user_id,
-                        run_id=internal_id,
-                        recorded_for=date.today().isoformat(),
-                        emails_processed=ingestion_stats.total_after_filters,
-                        gmail_api_calls=ingestion_stats.gmail_api_calls,
-                        gmail_remaining_quota_estimate=ingestion_stats.gmail_remaining_quota_estimate,
-                        ai_requests=0,
-                        ai_input_tokens_est=0,
-                        ai_output_tokens_est=0,
-                        ai_estimated_cost_usd=0.0,
-                        telegram_notifications_sent=0,
-                        telegram_notifications_failed=0,
-                        success_count=0,
-                        failure_count=0,
-                        error_categories={},
+                        user_id,
+                        internal_id,
+                        ingestion_stats,
+                        analysis_stats,
+                        persistence_stats,
                         sync_status="complete",
                     )
                     return stats
@@ -154,23 +192,13 @@ def run_pipeline_multiuser(
                         "skipped",
                         message="No classifications produced by analysis.",
                     )
-                    record_usage_metrics(
+                    _record_run_usage(
                         client,
-                        user_id=user_id,
-                        run_id=internal_id,
-                        recorded_for=date.today().isoformat(),
-                        emails_processed=ingestion_stats.total_after_filters,
-                        gmail_api_calls=ingestion_stats.gmail_api_calls,
-                        gmail_remaining_quota_estimate=ingestion_stats.gmail_remaining_quota_estimate,
-                        ai_requests=analysis_stats.ai_requests,
-                        ai_input_tokens_est=analysis_stats.ai_input_tokens_est,
-                        ai_output_tokens_est=analysis_stats.ai_output_tokens_est,
-                        ai_estimated_cost_usd=analysis_stats.ai_estimated_cost_usd,
-                        telegram_notifications_sent=0,
-                        telegram_notifications_failed=0,
-                        success_count=0,
-                        failure_count=0,
-                        error_categories={},
+                        user_id,
+                        internal_id,
+                        ingestion_stats,
+                        analysis_stats,
+                        persistence_stats,
                         sync_status="complete",
                     )
                     return stats
@@ -234,26 +262,17 @@ def run_pipeline_multiuser(
         if persistence_stats.telegram_error:
             stats["telegram_error"] = persistence_stats.telegram_error
 
-        record_usage_metrics(
+        _record_run_usage(
             client,
-            user_id=user_id,
-            run_id=internal_id,
-            recorded_for=date.today().isoformat(),
-            emails_processed=ingestion_stats.total_after_filters,
-            gmail_api_calls=ingestion_stats.gmail_api_calls,
-            gmail_remaining_quota_estimate=ingestion_stats.gmail_remaining_quota_estimate,
-            ai_requests=analysis_stats.ai_requests,
-            ai_input_tokens_est=analysis_stats.ai_input_tokens_est,
-            ai_output_tokens_est=analysis_stats.ai_output_tokens_est,
-            ai_estimated_cost_usd=analysis_stats.ai_estimated_cost_usd,
-            telegram_notifications_sent=persistence_stats.notifications_sent,
-            telegram_notifications_failed=persistence_stats.notifications_failed,
-            success_count=persistence_stats.added + persistence_stats.updated,
-            failure_count=persistence_stats.errors,
+            user_id,
+            internal_id,
+            ingestion_stats,
+            analysis_stats,
+            persistence_stats,
+            sync_status="complete",
             error_categories=categorize_errors(
                 persistence_stats.report.error_messages if persistence_stats.report else []
             ),
-            sync_status="complete",
         )
 
         return stats
@@ -262,47 +281,31 @@ def run_pipeline_multiuser(
         message = str(error) or "Cancelled by user"
         log_to_db(client, internal_id, "WARNING", message, current_step)
         update_pipeline_step(client, step_run_id, current_step, "failed", message=message)
-        record_usage_metrics(
+        persistence_stats.errors = max(persistence_stats.errors, 1)
+        _record_run_usage(
             client,
-            user_id=user_id,
-            run_id=internal_id,
-            recorded_for=date.today().isoformat(),
-            emails_processed=ingestion_stats.total_after_filters,
-            gmail_api_calls=ingestion_stats.gmail_api_calls,
-            gmail_remaining_quota_estimate=ingestion_stats.gmail_remaining_quota_estimate,
-            ai_requests=analysis_stats.ai_requests,
-            ai_input_tokens_est=analysis_stats.ai_input_tokens_est,
-            ai_output_tokens_est=analysis_stats.ai_output_tokens_est,
-            ai_estimated_cost_usd=analysis_stats.ai_estimated_cost_usd,
-            telegram_notifications_sent=persistence_stats.notifications_sent,
-            telegram_notifications_failed=persistence_stats.notifications_failed,
-            success_count=persistence_stats.added + persistence_stats.updated,
-            failure_count=max(persistence_stats.errors, 1),
-            error_categories={"cancelled": 1},
+            user_id,
+            internal_id,
+            ingestion_stats,
+            analysis_stats,
+            persistence_stats,
             sync_status="failed",
+            error_categories={"cancelled": 1},
         )
         raise
     except Exception as error:
         log_to_db(client, internal_id, "ERROR", f"Pipeline failed at '{current_step}': {error}", current_step)
         update_pipeline_step(client, step_run_id, current_step, "failed", message=str(error))
-        record_usage_metrics(
+        persistence_stats.errors = max(persistence_stats.errors, 1)
+        _record_run_usage(
             client,
-            user_id=user_id,
-            run_id=internal_id,
-            recorded_for=date.today().isoformat(),
-            emails_processed=ingestion_stats.total_after_filters,
-            gmail_api_calls=ingestion_stats.gmail_api_calls,
-            gmail_remaining_quota_estimate=ingestion_stats.gmail_remaining_quota_estimate,
-            ai_requests=analysis_stats.ai_requests,
-            ai_input_tokens_est=analysis_stats.ai_input_tokens_est,
-            ai_output_tokens_est=analysis_stats.ai_output_tokens_est,
-            ai_estimated_cost_usd=analysis_stats.ai_estimated_cost_usd,
-            telegram_notifications_sent=persistence_stats.notifications_sent,
-            telegram_notifications_failed=persistence_stats.notifications_failed,
-            success_count=persistence_stats.added + persistence_stats.updated,
-            failure_count=max(persistence_stats.errors, 1),
-            error_categories=categorize_errors([str(error)]),
+            user_id,
+            internal_id,
+            ingestion_stats,
+            analysis_stats,
+            persistence_stats,
             sync_status="failed",
+            error_categories=categorize_errors([str(error)]),
         )
         raise
 
@@ -343,11 +346,13 @@ def _run_ingestion_stage(
 
     pending_emails = get_unprocessed_emails_for_user(client, user_id, limit=1000)
     recovered_count = 0
+    recovered_email_ids: set[str] = set()
     if pending_emails:
         new_ids = {email.email_id for email in new_emails}
         recovered_emails = [email for email in pending_emails if email.email_id not in new_ids]
         recovered_count = len(recovered_emails)
         if recovered_count:
+            recovered_email_ids = {email.email_id for email in recovered_emails}
             log_to_db(
                 client,
                 internal_id,
@@ -374,10 +379,6 @@ def _run_ingestion_stage(
         )
         return stage_stats
 
-    # Capture all email IDs BEFORE filtering so we can mark filtered-out
-    # recovery emails as processed (prevents them from re-appearing every run)
-    all_email_ids_before_filter = [email.email_id for email in new_emails]
-
     # FIX: Insert all fetched emails into the database FIRST
     # If they are filtered out later, they will be marked as processed.
     # Otherwise, they would never be stored, causing an infinite fetch loop.
@@ -395,8 +396,35 @@ def _run_ingestion_stage(
                 message=f"Stored {index + 1}/{len(new_emails)} emails",
             )
 
+    pipeline_config = get_pipeline_config(client)
+    configured_cap = pipeline_config.get("max_emails_per_run", 250)
+    try:
+        max_emails_per_run = int(configured_cap)
+    except (TypeError, ValueError):
+        max_emails_per_run = 250
+
+    max_emails_per_run = max(25, max_emails_per_run)
+    selected_emails, deferred_email_ids = _select_emails_for_current_run(
+        new_emails,
+        recovered_email_ids=recovered_email_ids,
+        max_emails_per_run=max_emails_per_run,
+    )
+    all_email_ids_before_filter = [email.email_id for email in selected_emails]
+
+    if deferred_email_ids:
+        log_to_db(
+            client,
+            internal_id,
+            "INFO",
+            (
+                f"Run cap reached ({max_emails_per_run} emails). "
+                f"Deferred {len(deferred_email_ids)} emails for the next run."
+            ),
+            PipelineStage.INGESTION.value,
+        )
+
     # Now apply user filters
-    new_emails, filter_stats = apply_user_filters(client, user_id, new_emails)
+    new_emails, filter_stats = apply_user_filters(client, user_id, selected_emails)
     log_to_db(
         client,
         internal_id,
@@ -434,7 +462,10 @@ def _run_ingestion_stage(
         PipelineStage.INGESTION.value,
         "success",
         progress=100,
-        message=f"Stored {len(new_emails)} emails for downstream stages",
+        message=(
+            f"Stored {len(new_emails)} emails for downstream stages"
+            + (f"; deferred {len(deferred_email_ids)}" if deferred_email_ids else "")
+        ),
         stats=stage_stats.model_dump(mode="json"),
     )
     return stage_stats

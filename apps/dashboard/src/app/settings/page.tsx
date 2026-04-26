@@ -323,7 +323,8 @@ export default function SettingsPage() {
       <div className={styles.section}>
         <h2 className={styles.sectionTitle}>Pipeline Configuration</h2>
         <p className={styles.description}>
-          Control how often the shared orchestrator checks for new emails and how long run history is retained.
+          Control how often the shared orchestrator checks for new emails, how much backlog each run can process,
+          and how long operational history is retained.
         </p>
 
         {configLoading ? (
@@ -368,6 +369,23 @@ export default function SettingsPage() {
             </div>
 
             <div className={styles.configRow}>
+              <label className={styles.label}>Backfill Fairness Cap</label>
+              <select
+                className={styles.select}
+                value={config.max_emails_per_run ?? 250}
+                disabled={loading}
+                onChange={(event) =>
+                  void updateConfig({ max_emails_per_run: Number(event.target.value) })
+                }
+              >
+                <option value={100}>100 emails / run</option>
+                <option value={250}>250 emails / run</option>
+                <option value={500}>500 emails / run</option>
+                <option value={1000}>1000 emails / run</option>
+              </select>
+            </div>
+
+            <div className={styles.configRow}>
               <label className={styles.label}>Pipeline Status</label>
               <button
                 className={`${styles.button} ${config.is_paused ? styles.success : styles.warning}`}
@@ -377,6 +395,11 @@ export default function SettingsPage() {
                 {config.is_paused ? "Resume Pipeline" : "Pause Pipeline"}
               </button>
             </div>
+
+            <p className={styles.helperText}>
+              If a mailbox has a large backlog, BewerbLens now stores everything immediately but only processes the
+              configured chunk per run. Deferred emails stay queued for the next run instead of starving other users.
+            </p>
           </div>
         ) : (
           <p className={styles.description}>

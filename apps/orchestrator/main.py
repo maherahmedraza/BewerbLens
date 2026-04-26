@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI  # noqa: E402
+from fastapi import Depends, FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from loguru import logger  # noqa: E402
 
@@ -32,8 +32,15 @@ if TRACKER_DIR not in sys.path:
     sys.path.insert(0, TRACKER_DIR)
 
 # Después de configurar sys.path, importar los servicios
+from config import validate_runtime_settings  # noqa: E402
 from routers import config as config_router  # noqa: E402
 from routers import runs as runs_router  # noqa: E402
+from security import (  # noqa: E402
+    ensure_orchestrator_security_settings,
+    rate_limit_protected_route,
+    security_settings,
+    verify_orchestrator_api_key,
+)
 from services.scheduler import scheduler_service  # noqa: E402
 from services.worker import worker_loop  # noqa: E402
 
@@ -41,6 +48,8 @@ from services.worker import worker_loop  # noqa: E402
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestiona el ciclo de vida: startup y shutdown."""
+    ensure_orchestrator_security_settings()
+    validate_runtime_settings()
     logger.info("Starting BewerbLens Orchestrator...")
 
     # 1. Worker thread — reclama y ejecuta tareas de la cola
@@ -71,15 +80,30 @@ app = FastAPI(title="BewerbLens Orchestrator", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=security_settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ── Mount Routers ──────────────────────────────────────────────
-app.include_router(config_router.router, prefix="/config", tags=["config"])
-app.include_router(runs_router.router, prefix="/runs", tags=["runs"])
+protected_dependencies = [
+    Depends(verify_orchestrator_api_key),
+    Depends(rate_limit_protected_route),
+]
+
+app.include_router(
+    config_router.router,
+    prefix="/config",
+    tags=["config"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    runs_router.router,
+    prefix="/runs",
+    tags=["runs"],
+    dependencies=protected_dependencies,
+)
 
 
 @app.get("/health")

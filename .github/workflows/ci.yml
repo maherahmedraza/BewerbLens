@@ -36,6 +36,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt ruff pytest
 
+      - name: Validate migration numbering
+        run: python scripts/validate_migrations.py
+
       - name: Lint with Ruff
         run: ruff check apps/tracker apps/orchestrator
 
@@ -67,6 +70,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test
+        run: npm run test
+
       - name: Build
         run: npm run build
         env:
@@ -76,7 +82,7 @@ jobs:
 
   # ── Security Scan ──────────────────────────────────────────────
   security-scan:
-    name: Security — Gitleaks
+    name: Security — Gitleaks & Dependency Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,3 +93,26 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/dashboard/package-lock.json
+
+      - name: Audit dashboard production dependencies
+        working-directory: apps/dashboard
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high

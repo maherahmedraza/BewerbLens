@@ -145,7 +145,11 @@ export default function StatusFlowSankey({ data, height = 380 }: StatusFlowSanke
 
   return (
     <div className={styles.wrapper}>
-      <div className={styles.chartShell}>
+      <div
+        className={styles.chartShell}
+        role="img"
+        aria-label="Status flow chart showing movement from submitted applications to interview, rejection, and offer outcomes"
+      >
         <ResponsiveContainer width="100%" height={height}>
           <Sankey
             data={data}

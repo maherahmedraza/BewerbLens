@@ -81,10 +81,11 @@ export default function AnalyticsChartsClient({
           <section
             key={key}
             className={clsx(styles.chartCard, key === "sankey" && styles.sankeyCard)}
+            aria-labelledby={`chart-title-${key}`}
           >
             <div className={styles.cardHeader}>
               <div className={styles.cardHeaderText}>
-                <h3 className={styles.cardTitle}>{chartDefinitions[key].title}</h3>
+                <h3 id={`chart-title-${key}`} className={styles.cardTitle}>{chartDefinitions[key].title}</h3>
                 <p className={styles.cardDescription}>{chartDefinitions[key].description}</p>
               </div>
               <button
@@ -103,10 +104,18 @@ export default function AnalyticsChartsClient({
 
       {selectedChart ? (
         <div className={styles.overlay} onClick={() => setSelectedChart(null)}>
-          <div className={styles.modal} onClick={(event) => event.stopPropagation()}>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="analytics-lightbox-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className={styles.modalHeader}>
               <div>
-                <h3 className={styles.modalTitle}>{chartDefinitions[selectedChart].title}</h3>
+                <h3 id="analytics-lightbox-title" className={styles.modalTitle}>
+                  {chartDefinitions[selectedChart].title}
+                </h3>
                 <p className={styles.modalDescription}>
                   {chartDefinitions[selectedChart].description}
                 </p>

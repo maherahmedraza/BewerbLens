@@ -40,7 +40,11 @@ export default function PlatformPie({ data, height = 320 }: PlatformPieProps) {
   const total = chartData.reduce((sum, entry) => sum + entry.count, 0);
 
   return (
-    <div className={styles.wrapper}>
+    <div
+      className={styles.wrapper}
+      role="img"
+      aria-label="Application source distribution by platform"
+    >
       <div className={styles.chartArea}>
         <ResponsiveContainer width="100%" height={height}>
           <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>

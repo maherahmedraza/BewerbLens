@@ -15,9 +15,16 @@ export async function GET() {
 
   try {
     const applications = await getApplicationsForCurrentUser();
-    const csv = buildApplicationsCsv(applications);
+    const csv = `\uFEFF${buildApplicationsCsv(applications)}`;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(csv));
+        controller.close();
+      },
+    });
 
-    return new NextResponse(csv, {
+    return new NextResponse(stream, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": 'attachment; filename="bewerblens-applications.csv"',

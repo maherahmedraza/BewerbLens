@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     telegram_enabled: bool = Field(default=False)
     telegram_bot_token: str = Field(default="")
     telegram_chat_id: str = Field(default="")
+    follow_up_reminder_days: int = Field(default=14, ge=1, le=90)
+    follow_up_reminder_repeat_days: int = Field(default=7, ge=1, le=90)
 
     # ── Pipeline ───────────────────────────────────────────
     batch_size: int = Field(default=50, ge=1, le=100)
@@ -64,3 +66,11 @@ class Settings(BaseSettings):
 
 # Global instance — imported as `from config import settings`
 settings = Settings()
+
+
+def validate_runtime_settings() -> None:
+    if not (settings.encryption_secret or settings.encryption_key):
+        raise RuntimeError(
+            "Missing required environment variable: ENCRYPTION_SECRET or ENCRYPTION_KEY. "
+            "BewerbLens will not start without credential-encryption protection."
+        )

@@ -31,7 +31,11 @@ export default function StatusFunnel({ data, height = 250 }: StatusFunnelProps) 
   }
 
   return (
-    <div className={styles.chartShell}>
+    <div
+      className={styles.chartShell}
+      role="img"
+      aria-label="Application conversion funnel from submitted applications to offers"
+    >
       <ResponsiveContainer width="100%" height={height}>
         <BarChart data={data} layout="vertical" margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <defs>

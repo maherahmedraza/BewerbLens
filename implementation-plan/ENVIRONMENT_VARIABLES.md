@@ -7,6 +7,7 @@
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL used by browser and server clients |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key used for authenticated dashboard access |
 | `NEXT_PUBLIC_ORCHESTRATOR_URL` | Yes | FastAPI orchestrator base URL |
+| `ORCHESTRATOR_URL` | Recommended | Server-only override used by the dashboard proxy in Docker/dev networks |
 
 ## Dashboard server-only routes
 
@@ -16,6 +17,7 @@
 | `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret used for token exchange |
 | `GOOGLE_OAUTH_REDIRECT_URI` | Yes | Redirect URI for `/api/integrations/google/callback` |
 | `SUPABASE_KEY` | Yes | Service-role key used only by server-side completion routes |
+| `ORCHESTRATOR_API_KEY` | Yes | Shared secret injected into the dashboard's server-side orchestrator proxy |
 | `ENCRYPTION_SECRET` | Recommended | Primary secret for AES-256-GCM credential encryption |
 | `ENCRYPTION_KEY` | Optional | Legacy fallback for older encrypted payloads |
 | `TELEGRAM_BOT_USERNAME` | Optional | Lets the dashboard deep-link users to the bot |
@@ -38,6 +40,8 @@
 | `BACKFILL_START_DATE` | No | Legacy fallback for first-run ingestion date |
 | `PROMPT_BODY_MAX_CHARS` | No | Max email body size sent into prompts |
 | `CLASSIFIER_MAX_BATCH_TOKENS` | No | Token cap for batching |
+| `FOLLOW_UP_REMINDER_DAYS` | No | Minimum age for `Applied` applications before Telegram reminder jobs include them |
+| `FOLLOW_UP_REMINDER_REPEAT_DAYS` | No | Cooldown between repeated Telegram reminder nudges for the same application |
 
 ## Optional legacy Gmail bootstrap
 
@@ -57,4 +61,4 @@
 
 ## Current deployment note
 
-- `.do/app.yaml` currently sets `TELEGRAM_ENABLED` to `"false"`, which disables the tracker delivery path in production unless the code is changed or the env is overridden at deploy time.
+- Production and preview DigitalOcean specs now expect `ORCHESTRATOR_API_KEY`, `ENCRYPTION_SECRET` (preferred), and the follow-up reminder cadence variables alongside the existing backend secrets.

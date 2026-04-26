@@ -1,0 +1,42 @@
+name: Deploy Backend Preview (DigitalOcean)
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "apps/tracker/**"
+      - "apps/orchestrator/**"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".do/app.dev.yaml"
+      - ".github/workflows/deploy-backend-preview.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend-preview
+  cancel-in-progress: true
+
+jobs:
+  ci-gate:
+    name: CI Gate
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  deploy-digitalocean-preview:
+    name: Deploy Preview Backend
+    needs: ci-gate
+    if: ${{ secrets.DIGITALOCEAN_DEV_APP_ID != '' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: preview-backend
+    steps:
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Trigger preview deployment
+        run: |
+          doctl apps create-deployment ${{ secrets.DIGITALOCEAN_DEV_APP_ID }} --wait --format ID
+          echo "### 🧪 Preview backend deployed to DigitalOcean!" >> "$GITHUB_STEP_SUMMARY"
+          echo "**App ID:** ${{ secrets.DIGITALOCEAN_DEV_APP_ID }}" >> "$GITHUB_STEP_SUMMARY"

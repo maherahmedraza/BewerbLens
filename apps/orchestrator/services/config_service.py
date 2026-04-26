@@ -1,16 +1,17 @@
 from typing import Optional
 
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from services.supabase_client import supabase
 
 # Singleton ID for the pipeline config
 SINGLETON_ID = "00000000-0000-0000-0000-000000000001"
 
 class ConfigPatch(BaseModel):
-    retention_days: Optional[int] = None
-    schedule_interval_hours: Optional[float] = None
+    retention_days: Optional[int] = Field(default=None, ge=1, le=365)
+    schedule_interval_hours: Optional[float] = Field(default=None, ge=0.5, le=168.0)
     is_paused: Optional[bool] = None
+    max_emails_per_run: Optional[int] = Field(default=None, ge=25, le=5000)
 
 class ConfigService:
     """
@@ -57,7 +58,8 @@ class ConfigService:
             "id": SINGLETON_ID,
             "schedule_interval_hours": 4.0,
             "retention_days": 30,
-            "is_paused": False
+            "is_paused": False,
+            "max_emails_per_run": 250,
         }
         supabase.table("pipeline_config").insert(initial_data).execute()
         logger.info("Initialized default pipeline configuration")

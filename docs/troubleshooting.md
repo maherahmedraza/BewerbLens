@@ -66,14 +66,14 @@ Common issues and their resolutions.
 ## 10. Vercel Build Fails
 **Symptoms**: Deploy workflow fails at the "Build" step with `Module not found` or env var errors.
 - **Cause**: Missing environment variables in the Vercel dashboard.
-- **Fix**: Go to Vercel → Project Settings → Environment Variables and ensure `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_ORCHESTRATOR_URL` are set for the **Production** environment.
+- **Fix**: Go to Vercel → Project Settings → Environment Variables and ensure `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_ORCHESTRATOR_URL`, and `ORCHESTRATOR_API_KEY` are set for the **Production** environment.
 
 ## 11. DigitalOcean Container Won't Start
 **Symptoms**: DO app shows "Deploying" but never reaches "Active"; health check fails.
 - **Cause**: Missing environment variables or the orchestrator crashes on startup.
 - **Fix**:
   - Check the **Runtime Logs** tab in the DO dashboard for Python tracebacks.
-  - Verify all required env vars are set: `SUPABASE_URL`, `SUPABASE_KEY`, `GEMINI_API_KEY`, `ENCRYPTION_KEY`.
+  - Verify all required env vars are set: `SUPABASE_URL`, `SUPABASE_KEY`, `GEMINI_API_KEY`, `ENCRYPTION_SECRET` or `ENCRYPTION_KEY`, and `ORCHESTRATOR_API_KEY`.
   - Test the Docker image locally: `docker build -t bewerblens . && docker run -p 8000:8000 --env-file .env bewerblens`
 
 ## 12. GitHub Actions Deploy Fails
@@ -85,8 +85,8 @@ Common issues and their resolutions.
 
 ## 13. CORS Errors in Production
 **Symptoms**: Dashboard shows network errors; browser console shows `Access-Control-Allow-Origin` blocked.
-- **Cause**: The orchestrator's CORS middleware needs to allow your Vercel domain.
-- **Fix**: Update `allow_origins` in `apps/orchestrator/main.py` to include your production URL instead of `"*"`.
+- **Cause**: The orchestrator's trusted-origin allowlist is missing your dashboard URL, or browser code is bypassing the dashboard proxy and trying to call FastAPI directly.
+- **Fix**: Set the backend `DASHBOARD_URL` (and optional `ADDITIONAL_CORS_ORIGINS`) to your Vercel origin, and keep dashboard calls on the built-in `/api/orchestrator/*` proxy routes instead of direct browser-to-FastAPI requests.
 
 ## 14. Pipeline Trigger Cron Not Working
 **Symptoms**: No pipeline runs appear every 4 hours; `Scheduled Pipeline Sync` workflow shows no recent runs.

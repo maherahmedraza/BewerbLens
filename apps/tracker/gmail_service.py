@@ -90,16 +90,14 @@ def _get_cipher():
 def _get_aes_key() -> bytes | None:
     secret = settings.encryption_secret or settings.encryption_key
     if not secret:
-        logger.warning("No encryption secret configured. Credentials will be stored in plain JSON.")
-        return None
+        raise RuntimeError(
+            "Missing ENCRYPTION_SECRET or ENCRYPTION_KEY. Gmail credentials cannot be stored safely."
+        )
     return hashlib.sha256(secret.encode()).digest()
 
 def _encrypt_data(data: dict) -> str:
-    """Encrypt dictionary using AES-256-GCM, with JSON fallback if no secret exists."""
+    """Encrypt dictionary using AES-256-GCM."""
     aes_key = _get_aes_key()
-    if not aes_key:
-        return json.dumps(data)
-
     json_data = json.dumps(data).encode()
     iv = os.urandom(12)
     encrypted = AESGCM(aes_key).encrypt(iv, json_data, None)
@@ -125,8 +123,6 @@ def _decrypt_data(encrypted_str: str) -> dict:
         try:
             _prefix, iv_b64, payload_b64 = encrypted_str.split(":", 2)
             aes_key = _get_aes_key()
-            if not aes_key:
-                return {}
             iv = base64.urlsafe_b64decode(iv_b64.encode())
             payload = base64.urlsafe_b64decode(payload_b64.encode())
             decrypted = AESGCM(aes_key).decrypt(iv, payload, None)
@@ -211,27 +207,6 @@ def get_gmail_service_for_user(user_profile: Dict, db_client=None):
             logger.error(f"Failed to load database credentials: {e}")
             # Fall through to fallback
 
-    # ═══ Strategy 2: Environment Variable (Single-User Fallback) ═══
-    gmail_token_env = settings.gmail_token_json
-    if gmail_token_env:
-        logger.warning("Using env Gmail token (single-user mode)")
-        try:
-            # Support inline JSON or file path
-            token_value = gmail_token_env.strip().strip("'\"")
-            if token_value.startswith('{'):
-                token_data = json.loads(token_value)
-            elif os.path.exists(token_value):
-                with open(token_value, 'r') as f:
-                    token_data = json.load(f)
-            else:
-                raise ValueError("GMAIL_TOKEN_JSON is neither JSON nor a valid file path")
-
-            creds = _load_credentials_from_json(token_data, client=db_client, user_id=user_id)
-            _update_gmail_connection_state(db_client, user_id, "env_fallback", set_connected_at=True)
-            return build('gmail', 'v1', credentials=creds)
-        except Exception as e:
-            logger.error(f"Failed to load env credentials: {e}")
-            # Fall through to OAuth flow
 
     # ═══ Strategy 3: Interactive OAuth (Development Only) ═══
     logger.warning("No credentials found. Starting OAuth flow (dev mode only)")
