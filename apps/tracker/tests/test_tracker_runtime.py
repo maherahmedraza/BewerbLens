@@ -1,5 +1,8 @@
 from datetime import date
 
+import pytest
+
+import tracker
 from models import EmailMetadata, FollowUpReminderItem
 from telegram_notifier import _build_follow_up_message
 from tracker import _select_emails_for_current_run
@@ -46,3 +49,28 @@ def test_build_follow_up_message_includes_summary_and_escapes_names():
     assert "14 days" in message
     assert "ACME\\_\\[Labs\\]" in message
     assert "Data Scientist" in message
+
+
+def test_run_ingestion_stage_surfaces_underlying_gmail_error(monkeypatch):
+    monkeypatch.setattr(tracker, "update_pipeline_step", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tracker, "log_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tracker, "get_existing_email_ids_for_user", lambda *args, **kwargs: set())
+
+    def raise_gmail_error(*args, **kwargs):
+        raise RuntimeError(
+            "Stored Gmail credentials for user test@example.com could not be loaded: "
+            "Decrypted credentials data is empty. Decryption may have failed due to a mismatched ENCRYPTION_SECRET."
+        )
+
+    monkeypatch.setattr(tracker, "get_gmail_service_for_user", raise_gmail_error)
+
+    with pytest.raises(RuntimeError, match="mismatched ENCRYPTION_SECRET"):
+        tracker._run_ingestion_stage(
+            client=object(),
+            user={"id": "user-1", "email": "test@example.com"},
+            user_id="user-1",
+            since_date=None,
+            run_id="run-1",
+            internal_id=None,
+            sync_mode="backfill",
+        )

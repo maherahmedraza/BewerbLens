@@ -193,7 +193,8 @@ def get_gmail_service_for_user(user_profile: Dict, db_client=None):
 
     # ═══ Strategy 1: Database Credentials (Multi-User) ═══
     if user_profile.get('gmail_credentials'):
-        logger.info(f"Using database Gmail credentials for user {user_profile['email']}")
+        user_email = user_profile.get("email", user_id or "unknown user")
+        logger.info(f"Using database Gmail credentials for user {user_email}")
         try:
             # Handle both encrypted string and legacy dict
             creds_data = user_profile['gmail_credentials']
@@ -204,9 +205,14 @@ def get_gmail_service_for_user(user_profile: Dict, db_client=None):
             _update_gmail_connection_state(db_client, user_id, "oauth")
             return build('gmail', 'v1', credentials=creds)
         except Exception as e:
-            logger.error(f"Failed to load database credentials: {e}")
-            # Fall through to fallback
+            raise RuntimeError(
+                f"Stored Gmail credentials for user {user_email} could not be loaded: {e}"
+            ) from e
 
+    if user_id:
+        raise RuntimeError(
+            "No Gmail credentials are stored for this user profile. Reconnect Gmail from Settings."
+        )
 
     # ═══ Strategy 3: Interactive OAuth (Development Only) ═══
     logger.warning("No credentials found. Starting OAuth flow (dev mode only)")
