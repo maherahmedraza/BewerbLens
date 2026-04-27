@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import WorkspaceSettings from "@/components/settings/WorkspaceSettings";
@@ -25,6 +25,16 @@ interface SyncSettings {
   sync_error: string | null;
 }
 
+type FeedbackTone = "info" | "success" | "error";
+type PendingAction =
+  | "save-backfill"
+  | "queue-backfill"
+  | "queue-incremental"
+  | "update-config"
+  | "export"
+  | "delete"
+  | null;
+
 function getErrorMessage(error: unknown) {
   if (error && typeof error === "object" && "response" in error) {
     const response = (error as { response?: { data?: { detail?: string } } }).response;
@@ -43,16 +53,45 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString();
 }
 
+function isSyncActive(status: SyncStatus | null | undefined) {
+  return status === "pending" || status === "running";
+}
+
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [messageTone, setMessageTone] = useState<FeedbackTone>("info");
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [config, setConfig] = useState<PipelineConfig | null>(null);
   const [syncSettings, setSyncSettings] = useState<SyncSettings | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [syncLoading, setSyncLoading] = useState(true);
   const [backfillStartDate, setBackfillStartDate] = useState("");
+  const [lastSavedBackfillDate, setLastSavedBackfillDate] = useState("");
+  const persistedBackfillRef = useRef("");
+
+  const setFeedback = useCallback((text: string, tone: FeedbackTone = "info") => {
+    setMessage(text);
+    setMessageTone(tone);
+  }, []);
+
+  const applySyncSettings = useCallback(
+    (profile: SyncSettings, options?: { preserveEditedBackfillDate?: boolean }) => {
+      const persistedDate = profile.backfill_start_date || new Date().toISOString().slice(0, 10);
+      const previousPersisted = persistedBackfillRef.current;
+
+      setSyncSettings(profile);
+      persistedBackfillRef.current = persistedDate;
+      setLastSavedBackfillDate(persistedDate);
+      setBackfillStartDate((current) =>
+        options?.preserveEditedBackfillDate && current && current !== previousPersisted
+          ? current
+          : persistedDate
+      );
+    },
+    []
+  );
 
   const loadConfig = useCallback(async () => {
     try {
@@ -65,7 +104,7 @@ export default function SettingsPage() {
     }
   }, []);
 
-  const loadSyncSettings = useCallback(async () => {
+  const loadSyncSettings = useCallback(async (options?: { preserveEditedBackfillDate?: boolean }) => {
     try {
       const {
         data: { user },
@@ -77,14 +116,13 @@ export default function SettingsPage() {
       }
 
       const profile = await getOrCreateCompatibleUserProfile(supabase, user.id, user.email || "");
-      setSyncSettings(profile);
-      setBackfillStartDate(profile.backfill_start_date || new Date().toISOString().slice(0, 10));
+      applySyncSettings(profile, options);
     } catch (error) {
-      setMessage(getErrorMessage(error));
+      setFeedback(getErrorMessage(error), "error");
     } finally {
       setSyncLoading(false);
     }
-  }, [supabase]);
+  }, [applySyncSettings, setFeedback, supabase]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -94,26 +132,133 @@ export default function SettingsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [loadConfig, loadSyncSettings]);
 
+  useEffect(() => {
+    let isMounted = true;
+    let channelName: string | null = null;
+
+    async function subscribeToProfile() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user || !isMounted) {
+        return;
+      }
+
+      channelName = `settings-user-profile-${user.id}`;
+      const channel = supabase
+        .channel(channelName)
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "user_profiles", filter: `id=eq.${user.id}` },
+          () => {
+            void loadSyncSettings({ preserveEditedBackfillDate: true });
+          }
+        )
+        .subscribe();
+
+      return channel;
+    }
+
+    let activeChannel: ReturnType<typeof supabase.channel> | undefined;
+    void subscribeToProfile().then((channel) => {
+      activeChannel = channel;
+    });
+
+    return () => {
+      isMounted = false;
+      if (activeChannel) {
+        supabase.removeChannel(activeChannel);
+      } else if (channelName) {
+        const existing = supabase.getChannels().find((channel) => channel.topic === channelName);
+        if (existing) {
+          supabase.removeChannel(existing);
+        }
+      }
+    };
+  }, [loadSyncSettings, supabase]);
+
+  useEffect(() => {
+    if (!isSyncActive(syncSettings?.sync_status)) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadSyncSettings({ preserveEditedBackfillDate: true });
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadSyncSettings, syncSettings?.sync_status]);
+
   async function updateConfig(patch: Partial<PipelineConfig>) {
-    setLoading(true);
-    setMessage("");
+    setPendingAction("update-config");
+    setFeedback("");
 
     try {
+      setConfig((current) => (current ? { ...current, ...patch } : current));
       const response = await api.patch("/config/", patch);
       setConfig(response.data as PipelineConfig);
-      setMessage("Pipeline configuration updated.");
+      setFeedback("Pipeline configuration saved automatically.", "success");
     } catch (error) {
-      setMessage(`Update failed: ${getErrorMessage(error)}`);
+      setFeedback(`Update failed: ${getErrorMessage(error)}`, "error");
+      await loadConfig();
     } finally {
-      setLoading(false);
+      setPendingAction(null);
+    }
+  }
+
+  async function saveBackfillStartDate() {
+    if (!syncSettings) {
+      return;
+    }
+
+    setPendingAction("save-backfill");
+    setFeedback("");
+
+    try {
+      const { error } = await supabase
+        .from("user_profiles")
+        .update({ backfill_start_date: backfillStartDate })
+        .eq("id", syncSettings.id);
+
+      if (error) {
+        throw error;
+      }
+
+      applySyncSettings(
+        {
+          ...syncSettings,
+          backfill_start_date: backfillStartDate,
+        },
+        { preserveEditedBackfillDate: false }
+      );
+      setFeedback(`Backfill start date saved as ${backfillStartDate}.`, "success");
+    } catch (error) {
+      setFeedback(getErrorMessage(error), "error");
+    } finally {
+      setPendingAction(null);
     }
   }
 
   async function triggerBackfill() {
-    setLoading(true);
-    setMessage("");
+    const previousSettings = syncSettings;
+    setPendingAction("queue-backfill");
+    setFeedback("");
 
     try {
+      if (syncSettings) {
+        applySyncSettings(
+          {
+            ...syncSettings,
+            backfill_start_date: backfillStartDate,
+            sync_mode: "backfill",
+            sync_status: "pending",
+            sync_error: null,
+          },
+          { preserveEditedBackfillDate: false }
+        );
+      }
+
       const response = await fetch("/api/sync/backfill", {
         method: "POST",
         headers: {
@@ -127,19 +272,40 @@ export default function SettingsPage() {
       }
 
       await loadSyncSettings();
-      setMessage(payload.message || "Backfill sync queued.");
+      setFeedback(
+        payload.message
+          ? `${payload.message} Current status will refresh automatically below.`
+          : "Backfill sync queued. Current status will refresh automatically below.",
+        "success"
+      );
     } catch (error) {
-      setMessage(getErrorMessage(error));
+      if (previousSettings) {
+        applySyncSettings(previousSettings, { preserveEditedBackfillDate: false });
+      }
+      setFeedback(getErrorMessage(error), "error");
     } finally {
-      setLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function triggerIncremental() {
-    setLoading(true);
-    setMessage("");
+    const previousSettings = syncSettings;
+    setPendingAction("queue-incremental");
+    setFeedback("");
 
     try {
+      if (syncSettings) {
+        applySyncSettings(
+          {
+            ...syncSettings,
+            sync_mode: "incremental",
+            sync_status: "pending",
+            sync_error: null,
+          },
+          { preserveEditedBackfillDate: true }
+        );
+      }
+
       const response = await fetch("/api/sync/incremental", {
         method: "POST",
       });
@@ -148,26 +314,34 @@ export default function SettingsPage() {
         throw new Error(payload.error || "Failed to queue incremental sync.");
       }
 
-      await loadSyncSettings();
-      setMessage(payload.message || "Incremental sync queued.");
+      await loadSyncSettings({ preserveEditedBackfillDate: true });
+      setFeedback(
+        payload.message
+          ? `${payload.message} Current status will refresh automatically below.`
+          : "Incremental sync queued. Current status will refresh automatically below.",
+        "success"
+      );
     } catch (error) {
-      setMessage(getErrorMessage(error));
+      if (previousSettings) {
+        applySyncSettings(previousSettings, { preserveEditedBackfillDate: true });
+      }
+      setFeedback(getErrorMessage(error), "error");
     } finally {
-      setLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function handleExport() {
-    setLoading(true);
-    setMessage("");
+    setPendingAction("export");
+    setFeedback("");
 
     try {
       window.location.assign("/api/applications/export");
-      setMessage("CSV export started. The file opens cleanly in Excel and Google Sheets.");
+      setFeedback("CSV export started. The file opens cleanly in Excel and Google Sheets.", "success");
     } catch (error) {
-      setMessage(`Export failed: ${getErrorMessage(error)}`);
+      setFeedback(`Export failed: ${getErrorMessage(error)}`, "error");
     } finally {
-      setLoading(false);
+      setPendingAction(null);
     }
   }
 
@@ -180,23 +354,25 @@ export default function SettingsPage() {
       return;
     }
 
-    setLoading(true);
-    setMessage("");
+    setPendingAction("delete");
+    setFeedback("");
 
     try {
       const { error } = await supabase.rpc("delete_all_data");
       if (error) {
         throw error;
       }
-      setMessage("All data deleted successfully.");
+      setFeedback("All data deleted successfully.", "success");
     } catch (error) {
-      setMessage(`Delete failed: ${getErrorMessage(error)}`);
+      setFeedback(`Delete failed: ${getErrorMessage(error)}`, "error");
     } finally {
-      setLoading(false);
+      setPendingAction(null);
     }
   }
 
   const gmailConnected = Boolean(syncSettings?.gmail_connected);
+  const isBusy = pendingAction !== null;
+  const backfillDirty = backfillStartDate !== lastSavedBackfillDate;
   const schedulerStatus = config?.scheduler_status;
   const nextScheduledRun = schedulerStatus?.next_run_at ? formatDate(schedulerStatus.next_run_at) : "Not scheduled";
   const intervalMismatch =
@@ -214,6 +390,7 @@ export default function SettingsPage() {
     }
     return "";
   })();
+  const oauthTone: FeedbackTone = searchParams.get("gmail") === "error" ? "error" : "success";
 
   return (
     <div className={styles.container}>
@@ -233,6 +410,21 @@ export default function SettingsPage() {
           Choose the backfill window for first-time syncs, check the latest status, and trigger on-demand runs.
         </p>
 
+        {message || oauthMessage ? (
+          <div
+            className={`${styles.message} ${
+              (message ? messageTone : oauthTone) === "error"
+                ? styles.messageError
+                : (message ? messageTone : oauthTone) === "success"
+                  ? styles.messageSuccess
+                  : styles.messageInfo
+            }`}
+            aria-live="polite"
+          >
+            {message || oauthMessage}
+          </div>
+        ) : null}
+
         {syncLoading ? (
           <p className={styles.description}>Loading sync settings...</p>
         ) : syncSettings ? (
@@ -244,7 +436,7 @@ export default function SettingsPage() {
                 OAuth, then queues a backfill here to process read and unread emails.
               </p>
               {!gmailConnected ? (
-                <button className={styles.button} onClick={connectGmail} disabled={loading}>
+                <button className={styles.button} onClick={connectGmail} disabled={isBusy}>
                   Connect Gmail with OAuth
                 </button>
               ) : null}
@@ -297,7 +489,7 @@ export default function SettingsPage() {
                   type="date"
                   className={styles.input}
                   value={backfillStartDate}
-                  disabled={loading || !gmailConnected}
+                  disabled={isBusy || !gmailConnected}
                   onChange={(event) => setBackfillStartDate(event.target.value)}
                 />
               </div>
@@ -312,7 +504,10 @@ export default function SettingsPage() {
                     : "No"}
                 </span>
                 <span className={styles.helperText}>
-                  Initial start date: {syncSettings.backfill_start_date || "Not set"}
+                  Saved start date: {lastSavedBackfillDate || "Not set"}
+                </span>
+                <span className={backfillDirty ? styles.warningText : styles.successText}>
+                  {backfillDirty ? "Unsaved date change" : "Date saved"}
                 </span>
               </div>
 
@@ -329,20 +524,32 @@ export default function SettingsPage() {
 
               <div className={styles.actionsRow}>
                 <button
+                  className={styles.secondaryButton}
+                  onClick={() => void saveBackfillStartDate()}
+                  disabled={isBusy || !gmailConnected || !backfillDirty || !syncSettings.supportsSyncSchema}
+                  title="Save the selected backfill date without starting a run"
+                >
+                  {pendingAction === "save-backfill"
+                    ? "Saving date..."
+                    : backfillDirty
+                      ? "Save start date"
+                      : "Start date saved"}
+                </button>
+                <button
                   className={styles.button}
                   onClick={() => void triggerBackfill()}
-                  disabled={loading || !gmailConnected || !syncSettings.supportsSyncSchema}
+                  disabled={isBusy || !gmailConnected || !syncSettings.supportsSyncSchema}
                   title="Queue a historical sync from the backfill start date"
                 >
-                  Queue Backfill
+                  {pendingAction === "queue-backfill" ? "Queueing backfill..." : "Queue Backfill"}
                 </button>
                 <button
                   className={`${styles.button} ${styles.success}`}
                   onClick={() => void triggerIncremental()}
-                  disabled={loading || !gmailConnected || !syncSettings.supportsSyncSchema}
+                  disabled={isBusy || !gmailConnected || !syncSettings.supportsSyncSchema}
                   title="Queue a sync focused on new mail since the last checkpoint"
                 >
-                  Queue Incremental Sync
+                  {pendingAction === "queue-incremental" ? "Queueing incremental..." : "Queue Incremental Sync"}
                 </button>
               </div>
             </div>
@@ -358,6 +565,12 @@ export default function SettingsPage() {
           Control how often the shared orchestrator checks for new emails, how much backlog each run can process,
           and how long operational history is retained.
         </p>
+        <div className={styles.autosaveRow}>
+          <span className={styles.helperText}>Changes here save automatically.</span>
+          <span className={pendingAction === "update-config" ? styles.infoText : styles.helperText}>
+            {pendingAction === "update-config" ? "Saving configuration..." : "Runtime fields below refresh in the background."}
+          </span>
+        </div>
 
         {configLoading ? (
           <p className={styles.description}>Loading configuration...</p>
@@ -371,7 +584,7 @@ export default function SettingsPage() {
               <select
                 className={styles.select}
                 value={config.schedule_interval_hours}
-                disabled={loading}
+                disabled={isBusy}
                 onChange={(event) =>
                   void updateConfig({ schedule_interval_hours: Number(event.target.value) })
                 }
@@ -393,7 +606,7 @@ export default function SettingsPage() {
               <select
                 className={styles.select}
                 value={config.retention_days}
-                disabled={loading}
+                disabled={isBusy}
                 onChange={(event) =>
                   void updateConfig({ retention_days: Number(event.target.value) })
                 }
@@ -414,7 +627,7 @@ export default function SettingsPage() {
               <select
                 className={styles.select}
                 value={config.max_emails_per_run ?? 250}
-                disabled={loading}
+                disabled={isBusy}
                 onChange={(event) =>
                   void updateConfig({ max_emails_per_run: Number(event.target.value) })
                 }
@@ -433,10 +646,14 @@ export default function SettingsPage() {
               </label>
               <button
                 className={`${styles.button} ${config.is_paused ? styles.success : styles.warning}`}
-                disabled={loading}
+                disabled={isBusy}
                 onClick={() => void updateConfig({ is_paused: !config.is_paused })}
               >
-                {config.is_paused ? "Resume Pipeline" : "Pause Pipeline"}
+                {pendingAction === "update-config"
+                  ? "Saving..."
+                  : config.is_paused
+                    ? "Resume Pipeline"
+                    : "Pause Pipeline"}
               </button>
             </div>
 
@@ -509,10 +726,10 @@ export default function SettingsPage() {
         <button
           className={styles.button}
           onClick={() => void handleExport()}
-          disabled={loading}
+          disabled={isBusy}
           title="Download all tracked applications as a CSV file"
         >
-          Export Data (CSV)
+          {pendingAction === "export" ? "Preparing export..." : "Export Data (CSV)"}
         </button>
       </div>
 
@@ -524,14 +741,13 @@ export default function SettingsPage() {
         <button
           className={`${styles.button} ${styles.danger}`}
           onClick={() => void handleDelete()}
-          disabled={loading}
+          disabled={isBusy}
           title="Delete all stored BewerbLens data for your account"
         >
-          Delete All My Data
+          {pendingAction === "delete" ? "Deleting..." : "Delete All My Data"}
         </button>
       </div>
 
-      {message || oauthMessage ? <div className={styles.message}>{message || oauthMessage}</div> : null}
       </div>
 
       <WorkspaceSettings showHeading={false} />

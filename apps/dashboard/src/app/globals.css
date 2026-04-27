@@ -381,40 +381,47 @@ h1, h2, h3, h4 {
 }
 
 .log-area {
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
-  background: var(--bg-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
 }
 
 .log-row {
   display: flex;
   gap: 8px;
-  padding: 4px 12px;
+  align-items: flex-start;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border-color);
   white-space: pre-wrap;
   word-break: break-word;
+  transition: background-color 0.15s ease;
 }
 
 .log-row:hover {
-  background: var(--bg-secondary);
+  background: var(--bg-hover);
 }
 
 .log-timestamp {
   color: var(--text-muted);
-  min-width: 80px;
+  min-width: 84px;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .log-level {
-  min-width: 65px;
+  min-width: 68px;
   flex-shrink: 0;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .log-step {
   color: var(--text-secondary);
   min-width: 100px;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .log-message {

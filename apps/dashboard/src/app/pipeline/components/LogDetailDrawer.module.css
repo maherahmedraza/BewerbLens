@@ -126,6 +126,13 @@
   color: var(--text-secondary);
 }
 
+.viewerShell {
+  padding: 16px;
+  background: var(--bg-primary);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
 .copyButton {
   display: flex;
   align-items: center;

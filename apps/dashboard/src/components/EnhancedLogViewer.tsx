@@ -134,8 +134,8 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
   // ── Render ─────────────────────────────────────────────────────
   if (fetchError) {
     return (
-      <div className="log-viewer-container">
-        <div style={{ padding: 16, color: '#ef4444' }}>
+        <div className="log-viewer-container">
+        <div style={{ padding: 16, color: "var(--accent-red)" }}>
           Failed to load logs: {fetchError instanceof Error ? fetchError.message : 'Unknown error'}. 
           Check your authentication and Supabase connection.
         </div>
@@ -205,32 +205,28 @@ export default function EnhancedLogViewer({ runId, isLive = false }: EnhancedLog
         style={{
           height: '400px',
           overflowY: 'auto',
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          lineHeight: '1.6',
-          padding: '8px 12px',
         }}
       >
         {isLoading ? (
-          <div style={{ padding: 16, color: '#888' }}>Loading logs...</div>
+          <div style={{ padding: 16, color: "var(--text-muted)" }}>Loading logs...</div>
         ) : filteredLogs.length === 0 ? (
-          <div style={{ padding: 16, color: '#888' }}>No logs found</div>
+          <div style={{ padding: 16, color: "var(--text-muted)" }}>No logs found</div>
         ) : (
           filteredLogs.map((log) => (
-            <div key={log.id} className="log-row" style={{ display: 'flex', gap: '8px', padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              <span className="log-timestamp" style={{ color: '#666', whiteSpace: 'nowrap', minWidth: '70px' }}>
+            <div key={log.id} className="log-row">
+              <span className="log-timestamp">
                 {new Date(log.created_at).toLocaleTimeString()}
               </span>
               <span
                 className="log-level"
-                style={{ color: levelColors[log.level] || '#fff', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '60px' }}
+                style={{ color: levelColors[log.level] || "var(--text-primary)" }}
               >
                 [{log.level}]
               </span>
-              <span className="log-step" style={{ color: '#888', whiteSpace: 'nowrap', minWidth: '90px' }}>
+              <span className="log-step">
                 [{log.step_name}]
               </span>
-              <span className="log-message" style={{ color: '#e0e0e0', wordBreak: 'break-word' }}>
+              <span className="log-message">
                 {log.message}
               </span>
             </div>
