@@ -107,6 +107,15 @@ def _encrypt_data(data: dict) -> str:
         f"{base64.urlsafe_b64encode(encrypted).decode()}"
     )
 
+
+def _decode_base64url(value: str) -> bytes:
+    normalized = value.strip()
+    padding = (-len(normalized)) % 4
+    if padding:
+        normalized = f"{normalized}{'=' * padding}"
+    return base64.urlsafe_b64decode(normalized.encode())
+
+
 def _decrypt_data(encrypted_str: str) -> dict:
     """Decrypt AES-256-GCM or legacy Fernet payloads into a dictionary."""
     if not encrypted_str:
@@ -123,8 +132,8 @@ def _decrypt_data(encrypted_str: str) -> dict:
         try:
             _prefix, iv_b64, payload_b64 = encrypted_str.split(":", 2)
             aes_key = _get_aes_key()
-            iv = base64.urlsafe_b64decode(iv_b64.encode())
-            payload = base64.urlsafe_b64decode(payload_b64.encode())
+            iv = _decode_base64url(iv_b64)
+            payload = _decode_base64url(payload_b64)
             decrypted = AESGCM(aes_key).decrypt(iv, payload, None)
             return json.loads(decrypted.decode())
         except Exception as e:
@@ -240,8 +249,8 @@ def _load_credentials_from_json(creds_json: Dict, client=None, user_id: str = No
         token=creds_json.get('token'),
         refresh_token=creds_json.get('refresh_token'),
         token_uri=creds_json.get('token_uri', 'https://oauth2.googleapis.com/token'),
-        client_id=creds_json.get('client_id'),
-        client_secret=creds_json.get('client_secret'),
+        client_id=creds_json.get('client_id') or settings.google_client_id,
+        client_secret=creds_json.get('client_secret') or settings.google_client_secret,
         scopes=creds_json.get('scopes', SCOPES)
     )
 

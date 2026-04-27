@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     gmail_oauth_redirect_uri: str = Field(default="http://localhost:3000/auth/gmail/callback")
     encryption_key: str = Field(default="")
     encryption_secret: str = Field(default="")
+    google_client_id: str = Field(default="", env="GOOGLE_CLIENT_ID")
+    google_client_secret: str = Field(default="", env="GOOGLE_CLIENT_SECRET")
     gmail_daily_quota_units: int = Field(default=1_000_000_000, ge=1)
 
     # ── Gemini AI ──────────────────────────────────────────
