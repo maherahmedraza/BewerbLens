@@ -25,38 +25,32 @@ export default function PipelinePage() {
         <div className={styles.headerInfo}>
           <h1 className="heading">Pipeline Orchestration</h1>
           <p className="subheading">
-            Monitor real-time execution, manage ingestion schedules, and audit historical runs.
+            Monitor real-time execution, inspect stage progress, and audit historical runs.
           </p>
         </div>
       </header>
 
-      <div className={styles.grid}>
-        {/* Left Column: Monitoring & History */}
-        <div className={styles.mainContent}>
-          <Suspense fallback={<div className={styles.skeleton}>Loading Monitor...</div>}>
-            <PipelineMonitor onViewLogs={handleOpenLogs} />
-          </Suspense>
-          
-          <section className={styles.historySection}>
-            <h2 className={styles.sectionTitle}>Execution History</h2>
-            <Suspense fallback={<div className={styles.skeleton}>Loading History...</div>}>
-              <ExecutionHistory onViewLogs={handleOpenLogs} />
-            </Suspense>
-          </section>
-        </div>
+      <div className={styles.noticeCard}>
+        <h2 className={styles.noticeTitle}>Configuration lives in Workspace Settings</h2>
+        <p className={styles.noticeText}>
+          Sync interval, fairness caps, retention, Gmail connection, and notification settings are all managed from one place now.
+        </p>
+        <a href="/settings#sync-controls" className={styles.shortcutButton}>
+          Open Settings
+        </a>
+      </div>
 
-        {/* Right Column: Configuration Shortcut */}
-        <aside className={styles.sidebar}>
-          <div className={styles.shortcutCard}>
-            <h3 className={styles.shortcutTitle}>Pipeline Configuration</h3>
-            <p className={styles.shortcutDesc}>
-              Settings have been consolidated. Manage your pipeline sync intervals, backfill fairness caps, and retention limits in the global Workspace Settings.
-            </p>
-            <a href="/settings#sync-controls" className={styles.shortcutButton}>
-              Go to Settings
-            </a>
-          </div>
-        </aside>
+      <div className={styles.mainContent}>
+        <Suspense fallback={<div className={styles.skeleton}>Loading Monitor...</div>}>
+          <PipelineMonitor onViewLogs={handleOpenLogs} />
+        </Suspense>
+
+        <section className={styles.historySection}>
+          <h2 className={styles.sectionTitle}>Execution History</h2>
+          <Suspense fallback={<div className={styles.skeleton}>Loading History...</div>}>
+            <ExecutionHistory onViewLogs={handleOpenLogs} />
+          </Suspense>
+        </section>
       </div>
 
       {/* Log Detail Overlay (Drawer) */}

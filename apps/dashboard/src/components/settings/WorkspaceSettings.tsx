@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 
+import Tooltip from "@/components/ui/Tooltip";
 import { createClient } from "@/lib/supabase/client";
 import type { SyncMode, SyncStatus } from "@/lib/types";
 import { getOrCreateCompatibleUserProfile } from "@/lib/userProfiles";
@@ -382,12 +383,18 @@ export default function WorkspaceSettings({ showHeading = true }: WorkspaceSetti
         <h2>Basic Information</h2>
 
         <div className={styles.formGroup}>
-          <label>Email</label>
+          <label>
+            Email
+            <Tooltip iconOnly content="Primary account email from Supabase Auth. This is read-only and identifies the owner of all personal data." />
+          </label>
           <input type="text" value={profile.email} disabled />
         </div>
 
         <div className={styles.formGroup}>
-          <label>Full Name</label>
+          <label>
+            Full Name
+            <Tooltip iconOnly content="Optional display name used in the dashboard and future shared or exported views." />
+          </label>
           <input
             type="text"
             value={profile.full_name || ""}
@@ -399,7 +406,10 @@ export default function WorkspaceSettings({ showHeading = true }: WorkspaceSetti
         </div>
 
         <div className={styles.formGroup}>
-          <label>Region / Language</label>
+          <label>
+            Region / Language
+            <Tooltip iconOnly content="Controls your saved locale preference and the default filter presets BewerbLens prepares for your market." />
+          </label>
           <select
             value={profile.region}
             disabled={saving}
@@ -418,7 +428,10 @@ export default function WorkspaceSettings({ showHeading = true }: WorkspaceSetti
       </section>
 
       <section className={styles.section}>
-        <h2>Integrations</h2>
+        <h2>
+          Integrations
+          <Tooltip iconOnly content="Connect external services that BewerbLens uses on your behalf. Gmail is per-user; Gemini remains shared on the backend." />
+        </h2>
 
         <div className={styles.providerCard}>
           <div className={styles.providerHeader}>
@@ -445,14 +458,15 @@ export default function WorkspaceSettings({ showHeading = true }: WorkspaceSetti
                 : "Gmail is not connected yet."}
             </p>
           )}
-          <div className={styles.inlineActions}>
-            <button
-              onClick={connectGmail}
-              className={styles.btnPrimary}
-              disabled={!profile.supportsSyncSchema}
-            >
-              {gmailConnected ? "Reconnect Gmail" : "Connect Gmail"}
-            </button>
+            <div className={styles.inlineActions}>
+              <button
+                onClick={connectGmail}
+                className={styles.btnPrimary}
+                disabled={!profile.supportsSyncSchema}
+                title="Start or refresh your Gmail OAuth connection"
+              >
+                {gmailConnected ? "Reconnect Gmail" : "Connect Gmail"}
+              </button>
             <Link href="/settings#sync-controls" className={styles.btnSecondary}>
               Manage Sync
             </Link>
@@ -483,6 +497,7 @@ export default function WorkspaceSettings({ showHeading = true }: WorkspaceSetti
               onChange={(event) => void saveProfile({ telegram_enabled: event.target.checked })}
             />
             Enable Telegram notifications
+            <Tooltip iconOnly content="Turns Telegram delivery on for this account after the chat has been linked successfully." />
           </label>
 
           <div className={styles.inlineActions}>
@@ -524,7 +539,10 @@ export default function WorkspaceSettings({ showHeading = true }: WorkspaceSetti
       </section>
 
       <section className={styles.section}>
-        <h2>Email Filters</h2>
+        <h2>
+          Email Filters
+          <Tooltip iconOnly content="Fine-tune what reaches the classifier. Protected platform allowlist rules always win so common job platforms are not accidentally blocked." />
+        </h2>
         <p className={styles.helpText}>
           Your filters are still saved here for later tuning, but broad discovery mode currently
           bypasses restrictive filter rules so more candidate emails can reach Gemini first.
@@ -566,6 +584,7 @@ export default function WorkspaceSettings({ showHeading = true }: WorkspaceSetti
                   <option value="sender">Sender</option>
                   <option value="body">Body</option>
                 </select>
+                <Tooltip iconOnly content="Choose which email field the include or exclude rule inspects." />
 
                 <span className={styles.filterText}>contains</span>
 
@@ -588,6 +607,7 @@ export default function WorkspaceSettings({ showHeading = true }: WorkspaceSetti
                     }
                   />
                   Regex
+                  <Tooltip iconOnly content="Use a regular expression pattern instead of plain text matching." />
                 </label>
 
                 <label className={styles.checkboxLabel}>
@@ -600,6 +620,7 @@ export default function WorkspaceSettings({ showHeading = true }: WorkspaceSetti
                     }
                   />
                   Active
+                  <Tooltip iconOnly content="Inactive filters stay saved but are ignored during filtering." />
                 </label>
 
                 <button

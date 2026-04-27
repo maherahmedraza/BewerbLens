@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import WorkspaceSettings from "@/components/settings/WorkspaceSettings";
 import Tooltip from "@/components/ui/Tooltip";
@@ -43,6 +44,7 @@ function formatDate(value: string | null) {
 }
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -195,6 +197,23 @@ export default function SettingsPage() {
   }
 
   const gmailConnected = Boolean(syncSettings?.gmail_connected);
+  const schedulerStatus = config?.scheduler_status;
+  const nextScheduledRun = schedulerStatus?.next_run_at ? formatDate(schedulerStatus.next_run_at) : "Not scheduled";
+  const intervalMismatch =
+    typeof config?.schedule_interval_hours === "number" &&
+    typeof schedulerStatus?.effective_interval_hours === "number" &&
+    config.schedule_interval_hours !== schedulerStatus.effective_interval_hours;
+  const oauthMessage = (() => {
+    const gmailState = searchParams.get("gmail");
+    const nextMessage = searchParams.get("message");
+    if (gmailState === "error" && nextMessage) {
+      return nextMessage;
+    }
+    if (gmailState === "connected") {
+      return "Gmail connected successfully.";
+    }
+    return "";
+  })();
 
   return (
     <div className={styles.container}>
@@ -243,20 +262,29 @@ export default function SettingsPage() {
               </p>
             ) : null}
 
-            <div className={styles.statusCard}>
-              <div>
-                <span className={styles.label}>Current mode</span>
-                <p className={styles.statusValue}>{syncSettings.sync_mode}</p>
+              <div className={styles.statusCard}>
+                <div>
+                  <span className={styles.label}>
+                    Current mode
+                    <Tooltip iconOnly content="Backfill scans older mail from your chosen start date. Incremental sync focuses on newly arrived mail after you are set up." />
+                  </span>
+                  <p className={styles.statusValue}>{syncSettings.sync_mode}</p>
+                </div>
+                <div>
+                  <span className={styles.label}>
+                    Status
+                    <Tooltip iconOnly content="Shows the current pipeline state for your user profile, such as pending, running, complete, or failed." />
+                  </span>
+                  <p className={styles.statusValue}>{syncSettings.sync_status}</p>
+                </div>
+                <div>
+                  <span className={styles.label}>
+                    Last synced
+                    <Tooltip iconOnly content="Timestamp of the most recent successful or attempted sync for this account." />
+                  </span>
+                  <p className={styles.statusValue}>{formatDate(syncSettings.last_synced_at)}</p>
+                </div>
               </div>
-              <div>
-                <span className={styles.label}>Status</span>
-                <p className={styles.statusValue}>{syncSettings.sync_status}</p>
-              </div>
-              <div>
-                <span className={styles.label}>Last synced</span>
-                <p className={styles.statusValue}>{formatDate(syncSettings.last_synced_at)}</p>
-              </div>
-            </div>
 
             <div className={styles.fieldGrid}>
               <div className={styles.configRow}>
@@ -304,6 +332,7 @@ export default function SettingsPage() {
                   className={styles.button}
                   onClick={() => void triggerBackfill()}
                   disabled={loading || !gmailConnected || !syncSettings.supportsSyncSchema}
+                  title="Queue a historical sync from the backfill start date"
                 >
                   Queue Backfill
                 </button>
@@ -311,6 +340,7 @@ export default function SettingsPage() {
                   className={`${styles.button} ${styles.success}`}
                   onClick={() => void triggerIncremental()}
                   disabled={loading || !gmailConnected || !syncSettings.supportsSyncSchema}
+                  title="Queue a sync focused on new mail since the last checkpoint"
                 >
                   Queue Incremental Sync
                 </button>
@@ -414,6 +444,55 @@ export default function SettingsPage() {
               If a mailbox has a large backlog, BewerbLens now stores everything immediately but only processes the
               configured chunk per run. Deferred emails stay queued for the next run instead of starving other users.
             </p>
+
+            <div className={styles.runtimeCard}>
+              <div>
+                <span className={styles.label}>
+                  Effective schedule
+                  <Tooltip iconOnly content="The interval currently active inside the orchestrator scheduler. If this differs from the configured interval, runtime rescheduling did not apply correctly." />
+                </span>
+                <p className={styles.statusValue}>
+                  {schedulerStatus?.effective_interval_hours
+                    ? `Every ${schedulerStatus.effective_interval_hours} hours`
+                    : schedulerStatus?.is_paused
+                      ? "Paused"
+                      : "Not available"}
+                </p>
+              </div>
+              <div>
+                <span className={styles.label}>
+                  Next automatic run
+                  <Tooltip iconOnly content="The next run currently scheduled by the backend worker. This is the authoritative runtime value, not just the saved database config." />
+                </span>
+                <p className={styles.statusValue}>{nextScheduledRun}</p>
+              </div>
+              <div>
+                <span className={styles.label}>
+                  Scheduler health
+                  <Tooltip iconOnly content="Indicates whether the scheduler process is running and whether the sync job is currently registered." />
+                </span>
+                <p className={styles.statusValue}>
+                  {schedulerStatus?.scheduler_running
+                    ? schedulerStatus.scheduled_sync_active || schedulerStatus.is_paused
+                      ? "Healthy"
+                      : "Running without sync job"
+                    : "Scheduler offline"}
+                </p>
+              </div>
+            </div>
+
+            {schedulerStatus?.last_schedule_error ? (
+              <p className={styles.errorText}>
+                Latest scheduler error: {schedulerStatus.last_schedule_error}
+              </p>
+            ) : null}
+
+            {intervalMismatch ? (
+              <p className={styles.errorText}>
+                The saved interval is {config?.schedule_interval_hours} hours, but the live scheduler is still running every{" "}
+                {schedulerStatus?.effective_interval_hours} hours.
+              </p>
+            ) : null}
           </div>
         ) : (
           <p className={styles.description}>
@@ -427,7 +506,12 @@ export default function SettingsPage() {
         <p className={styles.description}>
           Export all your application data as a spreadsheet-friendly CSV for Excel or Google Sheets.
         </p>
-        <button className={styles.button} onClick={() => void handleExport()} disabled={loading}>
+        <button
+          className={styles.button}
+          onClick={() => void handleExport()}
+          disabled={loading}
+          title="Download all tracked applications as a CSV file"
+        >
           Export Data (CSV)
         </button>
       </div>
@@ -441,12 +525,13 @@ export default function SettingsPage() {
           className={`${styles.button} ${styles.danger}`}
           onClick={() => void handleDelete()}
           disabled={loading}
+          title="Delete all stored BewerbLens data for your account"
         >
           Delete All My Data
         </button>
       </div>
 
-      {message ? <div className={styles.message}>{message}</div> : null}
+      {message || oauthMessage ? <div className={styles.message}>{message || oauthMessage}</div> : null}
       </div>
 
       <WorkspaceSettings showHeading={false} />

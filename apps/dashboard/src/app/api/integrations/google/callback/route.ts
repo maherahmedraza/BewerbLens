@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
 
-    const missingVars = getMissingGoogleOAuthEnvVars();
+    const missingVars = getMissingGoogleOAuthEnvVars(request.url);
     const { searchParams, origin } = new URL(request.url);
     const state = parseOAuthState(searchParams.get("state"));
     const redirectUrl = buildRedirect(origin, state.next);
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
       return responseWithError("Google OAuth session expired. Please try connecting Gmail again.");
     }
 
-    const oauthClient = createGoogleOAuthClient();
+    const oauthClient = createGoogleOAuthClient(request.url);
     const { tokens } = await oauthClient.getToken(code);
 
     if (!tokens.refresh_token) {

@@ -22,18 +22,31 @@ function getRequiredEnv(name: string) {
   return value;
 }
 
-export function createGoogleOAuthClient() {
+export function resolveGoogleOAuthRedirectUri(requestUrl?: string) {
+  const configured = process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  if (configured) {
+    return configured;
+  }
+  if (!requestUrl) {
+    throw new Error("Missing required environment variable: GOOGLE_OAUTH_REDIRECT_URI");
+  }
+  return new URL("/api/integrations/google/callback", requestUrl).toString();
+}
+
+export function createGoogleOAuthClient(requestUrl?: string) {
   return new OAuth2Client({
     clientId: getRequiredEnv("GOOGLE_CLIENT_ID"),
     clientSecret: getRequiredEnv("GOOGLE_CLIENT_SECRET"),
-    redirectUri: getRequiredEnv("GOOGLE_OAUTH_REDIRECT_URI"),
+    redirectUri: resolveGoogleOAuthRedirectUri(requestUrl),
   });
 }
 
-export function getMissingGoogleOAuthEnvVars() {
-  return ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_OAUTH_REDIRECT_URI"].filter(
-    (name) => !process.env[name]
-  );
+export function getMissingGoogleOAuthEnvVars(requestUrl?: string) {
+  const missing = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"].filter((name) => !process.env[name]);
+  if (!process.env.GOOGLE_OAUTH_REDIRECT_URI && !requestUrl) {
+    missing.push("GOOGLE_OAUTH_REDIRECT_URI");
+  }
+  return missing;
 }
 
 function normalizeNextPath(nextPath: string | null | undefined) {

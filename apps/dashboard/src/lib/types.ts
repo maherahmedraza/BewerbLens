@@ -114,6 +114,15 @@ export interface PipelineConfig {
   schedule_interval_hours?: number;
   is_paused?: boolean;
   max_emails_per_run?: number;
+  scheduler_status?: {
+    scheduler_running: boolean;
+    scheduled_sync_active: boolean;
+    configured_interval_hours: number | null;
+    effective_interval_hours: number | null;
+    next_run_at: string | null;
+    is_paused: boolean | null;
+    last_schedule_error: string | null;
+  };
 }
 
 export type UserRole = "user" | "admin";
