@@ -4,7 +4,9 @@
   top: 18px;
   bottom: 18px;
   width: var(--sidebar-width);
-  background-color: var(--bg-sidebar);
+  background:
+    radial-gradient(circle at top, rgba(99, 102, 241, 0.08), transparent 36%),
+    var(--bg-sidebar);
   border: 1px solid var(--border-color);
   border-radius: 32px;
   display: flex;
@@ -35,13 +37,9 @@
 .logoImage {
   width: 48px;
   height: 48px;
-  object-fit: cover;
-  object-position: center 10%;
-  transform: scale(1.6);
-  background: white;
+  object-fit: contain;
   border-radius: 16px;
-  padding: 4px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.16);
 }
 
 .logoText {
@@ -68,7 +66,7 @@
 .navLink {
   text-decoration: none;
   color: var(--text-secondary);
-  font-weight: 700;
+  font-weight: 650;
   font-size: 14px;
   display: flex;
   align-items: center;
@@ -76,6 +74,7 @@
   padding: 14px 16px;
   border-radius: 18px;
   transition: all 0.2s ease;
+  letter-spacing: -0.01em;
 }
 
 .navLink:hover {
@@ -98,6 +97,10 @@
 .footer {
   padding-top: 24px;
   border-top: 1px solid var(--border-color);
+}
+
+.footerActions {
+  margin-top: 12px;
 }
 
 .userSection {
@@ -141,6 +144,7 @@
 .userInfo {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .userName {
@@ -153,6 +157,37 @@
   margin: 0;
   font-size: 12px;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logoutButton {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 18px;
+  padding: 11px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.logoutButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--border-color) 55%, var(--text-primary));
+}
+
+.logoutButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .skeletonText {

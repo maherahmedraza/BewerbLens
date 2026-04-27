@@ -158,9 +158,13 @@ export function useRealtimePipeline() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    // 1. Subscribe to pipeline_runs changes
-      const runsChannel = supabase
-      .channel('public:pipeline_runs')
+    const channelSuffix =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    const runsChannel = supabase
+      .channel(`public:pipeline_runs:${channelSuffix}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'pipeline_runs' },
@@ -170,9 +174,8 @@ export function useRealtimePipeline() {
       )
       .subscribe();
 
-    // 2. Subscribe to pipeline_config changes
     const configChannel = supabase
-      .channel('public:pipeline_config')
+      .channel(`public:pipeline_config:${channelSuffix}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'pipeline_config' },

@@ -58,6 +58,15 @@
   margin-bottom: 16px;
 }
 
+.autosaveRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
 .button {
   padding: 10px 20px;
   border: none;
@@ -89,6 +98,27 @@
 
 .button.warning {
   background: var(--accent-orange, #f59e0b);
+}
+
+.secondaryButton {
+  padding: 10px 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.secondaryButton:hover {
+  background: var(--bg-hover);
+}
+
+.secondaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .configGrid {
@@ -207,6 +237,25 @@
   font-size: 13px;
 }
 
+.infoText,
+.successText,
+.warningText {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.infoText {
+  color: var(--accent-blue);
+}
+
+.successText {
+  color: var(--accent-green);
+}
+
+.warningText {
+  color: var(--accent-orange);
+}
+
 .actionsRow {
   display: flex;
   gap: 12px;
@@ -221,11 +270,27 @@
 
 .message {
   padding: 12px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
   border-radius: var(--radius);
   font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.messageInfo {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   color: var(--text-secondary);
+}
+
+.messageSuccess {
+  background: var(--accent-green-soft);
+  border: 1px solid color-mix(in srgb, var(--accent-green) 35%, transparent);
+  color: var(--accent-green);
+}
+
+.messageError {
+  background: var(--accent-red-soft);
+  border: 1px solid color-mix(in srgb, var(--accent-red) 35%, transparent);
+  color: var(--accent-red);
 }
 
 @media (max-width: 640px) {
@@ -241,5 +306,9 @@
 
   .section {
     padding: 20px;
+  }
+
+  .autosaveRow {
+    align-items: flex-start;
   }
 }

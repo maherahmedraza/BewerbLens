@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getOrCreateCompatibleUserProfile } from "@/lib/userProfiles";
+import SignOutButton from "./SignOutButton";
 import styles from "./Sidebar.module.css";
 import { 
   HomeIcon, 
@@ -89,10 +90,10 @@ export default function Sidebar() {
         <div className={styles.logoContainer}>
           <Link href="/dashboard" className={styles.logo}>
             <Image 
-              src="/geometric_logo.png" 
+              src="/bewerblens-logo.svg" 
               alt="BewerbLens Logo" 
-              width={400} 
-              height={400} 
+              width={48} 
+              height={48} 
               className={styles.logoImage} 
               priority
             />
@@ -142,6 +143,11 @@ export default function Sidebar() {
                 )}
             </div>
           </Link>
+          <div className={styles.footerActions}>
+            <SignOutButton className={styles.logoutButton} onSignedOut={handleNavigate}>
+              Logout
+            </SignOutButton>
+          </div>
         </div>
       </aside>
     </>

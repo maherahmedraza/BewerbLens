@@ -1,7 +1,17 @@
 import Link from "next/link";
+import Image from "next/image";
 
-import { ArrowRightIcon, ChartBarSquareIcon, ShieldCheckIcon, SparklesIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowRightIcon,
+  ChartBarSquareIcon,
+  ShieldCheckIcon,
+  SparklesIcon,
+  BoltIcon,
+  CommandLineIcon,
+  EnvelopeIcon,
+} from "@heroicons/react/24/outline";
 
+import SignOutButton from "@/components/SignOutButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createClient } from "@/lib/supabase/server";
 
@@ -39,16 +49,106 @@ const trustStats = [
   { value: "3-stage", label: "Ingestion → analysis → persistence" },
 ];
 
+const integrationPills = ["Gmail OAuth", "Gemini AI", "Supabase Realtime", "Telegram Summary"];
+
+const operatingLoop = [
+  {
+    step: "01",
+    title: "Connect once",
+    description: "Secure Google OAuth links each inbox to a private workspace with per-user visibility.",
+    icon: EnvelopeIcon,
+  },
+  {
+    step: "02",
+    title: "Classify with context",
+    description: "BewerbLens reads candidate mail, maps intent, and preserves stage artifacts for reliable reruns.",
+    icon: SparklesIcon,
+  },
+  {
+    step: "03",
+    title: "Operate in real time",
+    description: "Runs, statuses, and scheduler state refresh live so users never have to guess what is happening.",
+    icon: BoltIcon,
+  },
+  {
+    step: "04",
+    title: "Act on outcomes",
+    description: "Applications, analytics, and Telegram summaries close the loop from inbox to interview pipeline.",
+    icon: CommandLineIcon,
+  },
+];
+
+const premiumPillars = [
+  {
+    eyebrow: "One workspace",
+    title: "Inbox, analytics, and controls stay together",
+    description:
+      "Competitors separate tracking, tailoring, and sync setup. BewerbLens keeps the operational loop in one calm surface.",
+  },
+  {
+    eyebrow: "Private by design",
+    title: "Built for real multi-user access",
+    description:
+      "Every view, run, and application record stays scoped to the signed-in user instead of pretending a single-user prototype is enough.",
+  },
+  {
+    eyebrow: "Operational clarity",
+    title: "The system tells you what changed",
+    description:
+      "Live runtime status, log detail, and end-of-run reports keep the product feeling reliable instead of opaque.",
+  },
+];
+
+const footerColumns = [
+  {
+    title: "Platform",
+    links: [
+      { href: "/dashboard", label: "Dashboard" },
+      { href: "/analytics", label: "Analytics" },
+      { href: "/settings", label: "Settings" },
+    ],
+  },
+  {
+    title: "Integrations",
+    links: [
+      { href: "/settings#sync-controls", label: "Gmail sync" },
+      { href: "/settings", label: "Telegram notifications" },
+      { href: "/pipeline", label: "Pipeline logs" },
+    ],
+  },
+  {
+    title: "Trust",
+    links: [
+      { href: "/login", label: "Secure sign-in" },
+      { href: "/settings", label: "Workspace controls" },
+      { href: "/applications", label: "Application tracking" },
+    ],
+  },
+];
+
 export default async function LandingPage() {
   const user = await getViewer();
   const primaryHref = user ? "/dashboard" : "/login";
   const primaryLabel = user ? "Open dashboard" : "Login with Google";
+  const secondaryHref = user ? "/settings" : "#features";
+  const secondaryLabel = user ? "Open settings" : "Explore workflow";
 
   return (
     <div className={styles.page}>
       <div className={styles.topBar}>
-        <div className={styles.topBarBrand}>BewerbLens</div>
-        <ThemeToggle className={styles.themeToggle} />
+        <div className={styles.topBarBrand}>
+          <Image src="/bewerblens-logo.svg" alt="BewerbLens" width={40} height={40} className={styles.brandLogo} priority />
+          <span className={styles.brandWordmark}>
+            BewerbLens
+            <small>Private application intelligence</small>
+          </span>
+        </div>
+        <div className={styles.topBarActions}>
+          <ThemeToggle className={styles.themeToggle} />
+          {user ? (
+            <SignOutButton className={styles.signOutButton}>Logout</SignOutButton>
+          ) : null}
+        </div>
       </div>
 
       <section className={styles.hero}>
@@ -67,9 +167,17 @@ export default async function LandingPage() {
               {primaryLabel}
               <ArrowRightIcon className={styles.actionIcon} />
             </Link>
-            <Link href="/login" className={styles.secondaryAction}>
-              Sign in
+            <Link href={secondaryHref} className={styles.secondaryAction}>
+              {secondaryLabel}
             </Link>
+          </div>
+
+          <div className={styles.integrationRow}>
+            {integrationPills.map((pill) => (
+              <span key={pill} className={styles.integrationPill}>
+                {pill}
+              </span>
+            ))}
           </div>
 
           <div className={styles.trustRow}>
@@ -85,7 +193,10 @@ export default async function LandingPage() {
         <div className={styles.heroVisual}>
           <div className={styles.visualShell}>
             <div className={styles.visualTopbar}>
-              <span className={styles.brand}>BewerbLens</span>
+              <span className={styles.brand}>
+                <Image src="/bewerblens-logo.svg" alt="" width={24} height={24} aria-hidden="true" />
+                BewerbLens
+              </span>
               <div className={styles.visualNav}>
                 <span>Overview</span>
                 <span>Applications</span>
@@ -125,7 +236,7 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <section className={styles.features}>
+      <section className={styles.features} id="features">
         {featureCards.map((feature) => (
           <article key={feature.title} className={styles.featureCard}>
             <feature.icon className={styles.featureIcon} />
@@ -133,6 +244,50 @@ export default async function LandingPage() {
             <p>{feature.description}</p>
           </article>
         ))}
+      </section>
+
+      <section className={styles.workflowSection}>
+        <div className={styles.sectionIntro}>
+          <div className={styles.badge}>Operating loop</div>
+          <h2 className={styles.sectionTitle}>Everything that matters between Gmail and interview-ready insight.</h2>
+          <p className={styles.sectionText}>
+            Inspired by the strongest all-in-one job search products, but grounded in BewerbLens&apos; own advantage:
+            reliable inbox automation, secure per-user access, and real operational feedback.
+          </p>
+        </div>
+
+        <div className={styles.workflowGrid}>
+          {operatingLoop.map((item) => (
+            <article key={item.step} className={styles.workflowCard}>
+              <div className={styles.workflowHeader}>
+                <span className={styles.workflowStep}>{item.step}</span>
+                <item.icon className={styles.workflowIcon} />
+              </div>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.premiumSection}>
+        <div className={styles.premiumPanel}>
+          <div className={styles.badge}>Premium product feel</div>
+          <h2 className={styles.sectionTitle}>A calmer product narrative than a spreadsheet, and more truthful telemetry than a static tracker.</h2>
+          <p className={styles.sectionText}>
+            BewerbLens feels premium when the interface is transparent: saved state is obvious, actions confirm instantly,
+            and the system exposes the runtime facts users care about.
+          </p>
+        </div>
+        <div className={styles.premiumGrid}>
+          {premiumPillars.map((pillar) => (
+            <article key={pillar.title} className={styles.premiumCard}>
+              <span>{pillar.eyebrow}</span>
+              <h3>{pillar.title}</h3>
+              <p>{pillar.description}</p>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className={styles.ctaSection}>
@@ -149,6 +304,30 @@ export default async function LandingPage() {
           <ArrowRightIcon className={styles.actionIcon} />
         </Link>
       </section>
+
+      <footer className={styles.footer}>
+        <div className={styles.footerBrand}>
+          <span className={styles.badge}>Private multi-user pipeline</span>
+          <h2 className={styles.footerTitle}>A calmer way to run application operations from Gmail to outcome.</h2>
+          <p className={styles.footerText}>
+            BewerbLens combines Gmail ingestion, AI classification, and protected per-user analytics in one workspace built for reliable follow-through.
+          </p>
+        </div>
+        <div className={styles.footerGrid}>
+          {footerColumns.map((column) => (
+            <div key={column.title} className={styles.footerColumn}>
+              <h3>{column.title}</h3>
+              <div className={styles.footerLinks}>
+                {column.links.map((link) => (
+                  <Link key={link.label} href={link.href}>
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </footer>
     </div>
   );
 }

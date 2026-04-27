@@ -64,7 +64,7 @@ export default function LogDetailDrawer({ onClose, run }: LogDetailDrawerProps) 
           <div className={styles.logHeader}>
             <span>Real-time Log Stream</span>
           </div>
-          <div style={{ padding: '16px', background: '#1a1a1a', borderRadius: '8px', border: '1px solid #333' }}>
+          <div className={styles.viewerShell}>
             {runUuid ? (
               <EnhancedLogViewer runId={runUuid} isLive={run.status === 'running'} />
             ) : (

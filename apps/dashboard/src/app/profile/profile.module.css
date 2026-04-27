@@ -209,6 +209,12 @@
   align-items: center;
 }
 
+.inlineActions .btnPrimary,
+.inlineActions .btnSecondary {
+  min-height: 44px;
+  margin-bottom: 0;
+}
+
 .filtersList {
   display: grid;
   gap: 12px;
