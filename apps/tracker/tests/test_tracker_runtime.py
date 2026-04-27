@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 
 import tracker
+from gmail_service import _decrypt_data, _encrypt_data
 from models import EmailMetadata, FollowUpReminderItem
 from telegram_notifier import _build_follow_up_message
 from tracker import _select_emails_for_current_run
@@ -74,3 +75,25 @@ def test_run_ingestion_stage_surfaces_underlying_gmail_error(monkeypatch):
             internal_id=None,
             sync_mode="backfill",
         )
+
+
+def test_decrypt_data_accepts_unpadded_base64url(monkeypatch):
+    monkeypatch.setattr("gmail_service.settings.encryption_secret", "shared-secret")
+    monkeypatch.setattr("gmail_service.settings.encryption_key", "")
+
+    encrypted = _encrypt_data(
+        {
+            "token": "token-value",
+            "refresh_token": "refresh-token",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    )
+    prefix, iv_b64, payload_b64 = encrypted.split(":", 2)
+    unpadded = f"{prefix}:{iv_b64.rstrip('=')}:{payload_b64.rstrip('=')}"
+
+    decrypted = _decrypt_data(unpadded)
+
+    assert decrypted["refresh_token"] == "refresh-token"
+    assert decrypted["client_secret"] == "client-secret"
