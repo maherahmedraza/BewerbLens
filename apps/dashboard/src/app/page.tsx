@@ -42,7 +42,7 @@ const trustStats = [
 export default async function LandingPage() {
   const user = await getViewer();
   const primaryHref = user ? "/dashboard" : "/login";
-  const primaryLabel = user ? "Open dashboard" : "Start with magic link";
+  const primaryLabel = user ? "Open dashboard" : "Login with Google";
 
   return (
     <div className={styles.page}>
