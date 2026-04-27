@@ -1,20 +1,24 @@
-import os
 import json
-from loguru import logger
-from google.oauth2.credentials import Credentials
+import os
 
 # Ensure correct path resolution
 import sys
+
+from google.oauth2.credentials import Credentials
+from loguru import logger
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import settings
 from supabase import create_client
+
+from config import settings
 from gmail_service import save_gmail_credentials_to_db
+
 
 def migrate_token():
     user_email = settings.user_email
     token_json_str = settings.gmail_token_json
-    
+
     if not token_json_str:
         logger.error("No GMAIL_TOKEN_JSON found in .env.")
         return
@@ -34,9 +38,9 @@ def migrate_token():
     if not res.data:
         logger.error(f"User with email {user_email} not found.")
         return
-        
+
     user_id = res.data[0]["id"]
-    
+
     logger.info(f"Migrating Gmail token for user: {user_email} (ID: {user_id})")
 
     # Construct the Credentials object

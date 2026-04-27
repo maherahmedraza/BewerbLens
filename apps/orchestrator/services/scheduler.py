@@ -40,6 +40,7 @@ class SchedulerService:
         self.retention_job_id = "pipeline_retention_cleanup"
         self.follow_up_job_id = "follow_up_reminders"
         self.is_running = False
+        self.last_schedule_error: str | None = None
 
     async def start(self):
         """Arranca el scheduler y carga la configuración inicial."""
@@ -85,39 +86,59 @@ class SchedulerService:
         con latencia cero.
         """
         try:
-            # 1. Obtener configuración si no fue proporcionada
             if not config_payload:
                 result = supabase.table("pipeline_config").select("*").eq("id", SINGLETON_ID).execute()
                 if not result.data:
-                    logger.warning("No configuration found in DB for rescheduling.")
-                    return
+                    raise RuntimeError("No configuration found in DB for rescheduling.")
                 config_payload = result.data[0]
 
             interval_hours = float(config_payload.get("schedule_interval_hours", 4.0))
-            is_paused = config_payload.get("is_paused", False)
-
-            # 2. Manejar estado de pausa
-            job = self.scheduler.get_job(self.job_id)
+            is_paused = bool(config_payload.get("is_paused", False))
+            job = self.scheduler.get_job(self.job_id) if self.scheduler.running else None
 
             if is_paused:
                 if job:
                     self.scheduler.remove_job(self.job_id)
                     logger.warning("Pipeline PAUSED via remote config.")
-                return
-
-            # 3. Crear o actualizar el job si cambió el intervalo
-            if not job or interval_hours != self.current_interval_hours:
-                self.scheduler.add_job(
-                    tracker_service.trigger_scheduled_run,
-                    trigger=IntervalTrigger(hours=interval_hours),
-                    id=self.job_id,
-                    replace_existing=True,
-                )
                 self.current_interval_hours = interval_hours
-                logger.success(f"Rescheduled: Pipeline will run every {interval_hours} hours.")
+                self.last_schedule_error = None
+                return self.get_schedule_status(interval_hours, is_paused)
 
+            self.scheduler.add_job(
+                tracker_service.trigger_scheduled_run,
+                trigger=IntervalTrigger(hours=interval_hours),
+                id=self.job_id,
+                replace_existing=True,
+            )
+            self.current_interval_hours = interval_hours
+            self.last_schedule_error = None
+            logger.success(f"Rescheduled: Pipeline will run every {interval_hours} hours.")
+            return self.get_schedule_status(interval_hours, is_paused)
         except Exception as e:
+            self.last_schedule_error = str(e)
             logger.error(f"Failed to reschedule from database: {str(e)}")
+            raise
+
+    def get_schedule_status(
+        self,
+        configured_interval_hours: float | None = None,
+        is_paused: bool | None = None,
+    ) -> dict:
+        job = self.scheduler.get_job(self.job_id) if self.scheduler.running else None
+        next_run_at = job.next_run_time.isoformat() if job and job.next_run_time else None
+        effective_interval_hours = None
+        if job and getattr(job.trigger, "interval", None):
+            effective_interval_hours = round(job.trigger.interval.total_seconds() / 3600, 2)
+
+        return {
+            "scheduler_running": self.scheduler.running,
+            "scheduled_sync_active": job is not None,
+            "configured_interval_hours": configured_interval_hours,
+            "effective_interval_hours": effective_interval_hours,
+            "next_run_at": next_run_at,
+            "is_paused": is_paused,
+            "last_schedule_error": self.last_schedule_error,
+        }
 
     async def trigger_now(self, parameters: dict = None):
         """Ejecución inmediata disparada por la API."""
