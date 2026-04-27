@@ -330,7 +330,10 @@ def _run_ingestion_stage(
     log_to_db(client, internal_id, "INFO", "Starting email ingestion", PipelineStage.INGESTION.value)
 
     existing_ids_snapshot = get_existing_email_ids_for_user(client, user_id)
-    service = get_gmail_service_for_user(user, db_client=client)
+    try:
+        service = get_gmail_service_for_user(user, db_client=client)
+    except Exception as error:
+        raise RuntimeError(f"Failed to initialize Gmail for user {user_id}: {error}") from error
     if not service:
         raise RuntimeError(f"Failed to initialize Gmail for user {user_id}")
 
