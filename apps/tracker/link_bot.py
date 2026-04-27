@@ -1,6 +1,7 @@
-import time
-import requests
 import os
+import time
+
+import requests
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
@@ -36,14 +37,14 @@ def poll_updates():
                 if text.startswith("/start "):
                     code = text.split(" ")[1].strip()
                     print(f"Received link code: {code} from chat {chat_id}")
-                    
+
                     # Call dashboard to complete linking
                     res = requests.post(
                         COMPLETE_URL,
                         headers={"x-telegram-link-secret": LINK_SECRET},
                         json={"code": code, "chatId": str(chat_id)}
                     )
-                    
+
                     if res.status_code == 200:
                         print("Successfully linked in dashboard!")
                         requests.post(
