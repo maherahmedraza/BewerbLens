@@ -12,15 +12,22 @@ import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+function buildFailureRedirect(request: Request, message: string) {
+  const { searchParams, origin } = new URL(request.url);
+  const nextPath = searchParams.get("next") || "/settings";
+  const redirectUrl = new URL(nextPath, origin);
+  redirectUrl.searchParams.set("gmail", "error");
+  redirectUrl.searchParams.set("message", message);
+  return NextResponse.redirect(redirectUrl);
+}
+
 export async function GET(request: Request) {
   try {
-    const missingVars = getMissingGoogleOAuthEnvVars();
+    const missingVars = getMissingGoogleOAuthEnvVars(request.url);
     if (missingVars.length > 0) {
-      return NextResponse.json(
-        {
-          error: `Google OAuth is not configured. Missing: ${missingVars.join(", ")}`,
-        },
-        { status: 503 }
+      return buildFailureRedirect(
+        request,
+        `Google OAuth is not configured. Missing: ${missingVars.join(", ")}`
       );
     }
 
@@ -37,7 +44,7 @@ export async function GET(request: Request) {
     const nextPath = searchParams.get("next") || "/profile";
     const nonce = createOAuthNonce();
 
-    const oauthClient = createGoogleOAuthClient();
+    const oauthClient = createGoogleOAuthClient(request.url);
     const url = oauthClient.generateAuthUrl({
       access_type: "offline",
       prompt: "consent",
@@ -55,11 +62,9 @@ export async function GET(request: Request) {
     });
     return response;
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to start Google OAuth.",
-      },
-      { status: 500 }
+    return buildFailureRedirect(
+      request,
+      error instanceof Error ? error.message : "Failed to start Google OAuth."
     );
   }
 }
